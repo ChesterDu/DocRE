@@ -110,9 +110,6 @@ class finalModel(nn.Module):
         # self.tokenizer = BertTokenizer.from_pretrained(model_name)
         self.max_token_len = max_token_len
         self.max_sen_num = max_sen_num
-        # # self.model = BertModel(self.config)
-        # self.encoder_config = BertConfig.from_pretrained(model_name)
-        # self.encoder = BertModel.from_pretrained(model_name)
         self.embed = copy.deepcopy(embed)
         self.vocab = vocab
 

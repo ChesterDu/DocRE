@@ -4,6 +4,7 @@ import json
 import torch
 import fastNLP
 import dgl
+import random
 
 with open("/content/drive/MyDrive/DocRE/DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
@@ -61,23 +62,27 @@ def build_vocab(train_data_pth,test_data_pth,dev_data_pth):
     return vocab
 
 class graphDataset(torch.utils.data.Dataset):
-    def __init__(self,data_pth,vocab,max_token_len=256,max_sen_num=10,ignore_label_idx=-1,split='train'):
+    def __init__(self,data_pth,vocab,seed=25,max_token_len=256,ignore_label_idx=-1,split='train'):
         super(graphDataset,self).__init__()
 
         with open(data_pth,'r') as fp:
             self.samples = json.load(fp)
         
         self.create_amr_graph_alighments()
+        print("AMR Graph Alignments Completed!")
         
         self.vocab = vocab
         self.max_token_len = 256
-        self.max_sen_num = 10
+        self.max_sen_num = max([len(sample['sents']) for sample in self.samples])
         self.split = split
         self.get_token_ids()
 
         self.max_label_num = max([len(sample['labels']) for sample in self.samples])
         self.ignore_label_idx = ignore_label_idx
         self.create_labels()
+
+        random.seed(seed)
+        random.shuffle(self.samples)
 
     def __getitem__(self,index):
         return self.samples[index]
@@ -87,7 +92,7 @@ class graphDataset(torch.utils.data.Dataset):
     
     def get_token_ids(self):
     # sents is a list of list of tokens
-        for i,sample in enumerate(self.samples):
+        for j,sample in enumerate(self.samples):
             token_ids = []
             sen_start_pos_lst = [0]   # starting ids of each sentence 
             for i,sen in enumerate(sample['sents']):
@@ -100,11 +105,11 @@ class graphDataset(torch.utils.data.Dataset):
             sen_start_pos_lst = sen_start_pos_lst[:-1]
             sen_start_pos_lst += [-1] * (self.max_sen_num - len(sen_start_pos_lst))
 
-            self.samples[i]['tokenIds'] = token_ids
-            self.samples[i]['senStartPos'] = sen_start_pos_lst
+            self.samples[j]['tokenIds'] = token_ids
+            self.samples[j]['senStartPos'] = sen_start_pos_lst
     
     def create_labels(self):
-        for i,sample in enumerate(self.samples):
+        for j,sample in enumerate(self.samples):
             labels = []
             headEntNodes = []
             tailEntNodes = []
@@ -118,9 +123,9 @@ class graphDataset(torch.utils.data.Dataset):
             headEntNodes += [0] * (self.max_label_num - len(headEntNodes))
             tailEntNodes += [0] * (self.max_label_num - len(tailEntNodes))
 
-            self.samples[i]['headEntNodes'] = headEntNodes
-            self.samples[i]['tailEntNodes'] = tailEntNodes
-            self.samples[i]['finalLabels'] = labels
+            self.samples[j]['headEntNodes'] = headEntNodes
+            self.samples[j]['tailEntNodes'] = tailEntNodes
+            self.samples[j]['finalLabels'] = labels
 
     
     ## Given the AMR Parsing results, create amr graph alignments to the tokens
@@ -138,7 +143,7 @@ class graphDataset(torch.utils.data.Dataset):
             
             return amr_span_start_id,amr_span_end_id+1
 
-        for i,sample in enumerate(self.samples):
+        for j,sample in enumerate(self.samples):
         # sample = samples[0]
             G = nx.DiGraph()
             amr_graphs = sample['amrGraphs']
@@ -221,8 +226,8 @@ class graphDataset(torch.utils.data.Dataset):
                         G.add_edge(unique_id,nearest_graph_id,edge_type='MENTION-NEAREST',edge_id=get_edge_idx('MENTION-NEAREST'))
 
                     unique_id += 1
-            self.samples[i]['graphData'] = dict(nodes=[[n, G.nodes[n]] for n in G.nodes()],edges=[[u, v, G.edges[(u,v)]] for u,v in G.edges()])
-            self.samples[i]['Entid2Node'] = entid2node
+            self.samples[j]['graphData'] = dict(nodes=[[n, G.nodes[n]] for n in G.nodes()],edges=[[u, v, G.edges[(u,v)]] for u,v in G.edges()])
+            self.samples[j]['Entid2Node'] = entid2node
 
 
 

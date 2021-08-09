@@ -104,15 +104,17 @@ class multiLayerRGAT(nn.Module):
 
 
 class finalModel(nn.Module):
-    def __init__(self,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,model_name='bert-base-uncased',max_token_len = 256,max_sen_num = 10):
+    def __init__(self,embed,vocab,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,max_token_len = 256,max_sen_num = 10):
         super(finalModel,self).__init__()
 
-        self.tokenizer = BertTokenizer.from_pretrained(model_name)
+        # self.tokenizer = BertTokenizer.from_pretrained(model_name)
         self.max_token_len = max_token_len
         self.max_sen_num = max_sen_num
-        # self.model = BertModel(self.config)
-        self.encoder_config = BertConfig.from_pretrained(model_name)
-        self.encoder = BertModel.from_pretrained(model_name)
+        # # self.model = BertModel(self.config)
+        # self.encoder_config = BertConfig.from_pretrained(model_name)
+        # self.encoder = BertModel.from_pretrained(model_name)
+        self.embed = copy.deepcopy(embed)
+        self.vocab = vocab
 
         # GNNs
         self.gnn = multiLayerRGAT(node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L)
@@ -127,13 +129,10 @@ class finalModel(nn.Module):
         token_ids = []
         sen_start_pos_lst = [0]   # starting ids of each sentence 
         for i,sen in enumerate(sents):
-            temp = self.tokenizer.encode(sen[:-1])  # remove the <ROOT> Token
-            if i != 0:
-                temp = temp[1:] # remove the [CLS]
-
-            token_ids += temp
+            temp = [self.vocab.to_index(word) for word in sen]
             start_pos = sen_start_pos_lst[-1] + len(temp)
             sen_start_pos_lst.append(start_pos)
+            token_ids += temp
 
         token_ids += [0] * (self.max_token_len - len(token_ids))
         sen_start_pos_lst = sen_start_pos_lst[:-1]
@@ -141,7 +140,7 @@ class finalModel(nn.Module):
         return token_ids, sen_start_pos_lst
     
     def contextual_encoding(self,batched_token_ids):
-        h = self.encoder(input_ids = batched_token_ids)[0]  #[batch, seq_len, hidden_len]
+        h = self.embed(batched_token_ids)  #[batch, seq_len, hidden_len]
         return h
     
     def forward(self,g,node_features,edge_features,head_ent_nodes,tail_ent_nodes):

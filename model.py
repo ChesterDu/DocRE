@@ -4,6 +4,7 @@ from transformers import BertTokenizer, BertModel, BertConfig
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
+from data import ner2id
 
 
 ENTITY_TYPE_NUM = 7
@@ -11,6 +12,42 @@ ENTITY_TYPE_EMB_DIM = 768
 REL_TYPE_NUM = 15
 REL_TYPE_EMB_DIM = 768
 OUTPUT_NUM = 97
+
+def get_features(x,sample,model):
+    device = x.device
+    node_in_dim = model.node_in_dim
+    node_features = torch.zeros((len(sample['graphData']['nodes']),node_in_dim)).to(device)
+    sen_start_pos_lst = sample['senStartPos']
+    for i,node_data in sample['graphData']['nodes']:
+        if node_data['attr'] == 'amr':
+            sen_start_pos = sen_start_pos_lst[node_data['sent_id']]
+            span_rep_lst = torch.zeros((node_data['pos'][1] - node_data['pos'][0],node_in_dim)).to(device)
+            for i,pos_id in enumerate(range(node_data['pos'][0],node_data['pos'][1])):
+                span_rep_lst[i] = x[sen_start_pos + pos_id]
+            node_feature = torch.sum(span_rep_lst,dim=0) / len(span_rep_lst)
+        elif node_data['attr'] == 'mention':
+            sen_start_pos = sen_start_pos_lst[node_data['sent_id']]
+            span_rep_lst = torch.zeros((node_data['pos'][1] - node_data['pos'][0],node_in_dim)).to(device)
+            for i,pos_id in enumerate(range(node_data['pos'][0],node_data['pos'][1])):
+                span_rep_lst[i] = x[sen_start_pos + pos_id]
+            node_feature = torch.sum(span_rep_lst,dim=0) / len(span_rep_lst)
+            node_feature += model.entityTypeEmb[ner2id[node_data['ent_type']]]
+        elif node_data['attr'] == 'entity':
+            node_feature = model.entityTypeEmb[ner2id[node_data['ent_type']]]
+        else:
+            pass
+
+        node_features[i-1] = node_feature
+
+    edge_in_dim = model.edge_in_dim
+    edge_features = torch.zeros((len(sample['graphData']['edges']),edge_in_dim)).to(device)
+    for i,edge_data_lst in enumerate(sample['graphData']['edges']):
+        _,_,edge_data = edge_data_lst
+        edge_features[i] = model.relEmb[edge_data['edge_id']]
+
+    return node_features, edge_features
+
+
 
 class LayerRGAT(nn.Module):
     def __init__(self,node_dim,edge_dim,M,K):
@@ -94,7 +131,7 @@ class multiLayerRGAT(nn.Module):
         self.node_out_fc = nn.Sequential(nn.Linear(node_dim,node_out_dim),nn.LeakyReLU())
         self.L = L
     def forward(self,g,node_features,edge_features):
-        node_features = self.node_in_fc(self.node_in_fc)
+        node_features = self.node_in_fc(node_features)
         edge_features = self.edge_in_fc(edge_features)
         for RGAT in self.RGATS:
           node_features =  RGAT(g,node_features,edge_features)
@@ -104,14 +141,21 @@ class multiLayerRGAT(nn.Module):
 
 
 class finalModel(nn.Module):
-    def __init__(self,embed,vocab,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,max_token_len = 256,max_sen_num = 10):
+    def __init__(self,embed,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L):
         super(finalModel,self).__init__()
 
-        # self.tokenizer = BertTokenizer.from_pretrained(model_name)
-        self.max_token_len = max_token_len
-        self.max_sen_num = max_sen_num
+        # Model HyperParameters
+        self.node_in_dim = node_in_dim
+        self.node_dim = node_dim
+        self.node_out_dim = node_out_dim
+        self.edge_in_dim = edge_in_dim
+        self.edge_dim = edge_dim
+        self.M = M
+        self.K = K
+        self.L = L
+
+        # Embedding Layer
         self.embed = copy.deepcopy(embed)
-        self.vocab = vocab
 
         # GNNs
         self.gnn = multiLayerRGAT(node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L)
@@ -119,22 +163,7 @@ class finalModel(nn.Module):
         self.relEmb = Parameter(torch.randn((REL_TYPE_NUM,REL_TYPE_EMB_DIM)))
 
         # Prediction Layer
-        self.pred_fc = nn.Linear(2*node_dim,OUTPUT_NUM)
-
-    def token2id(self,sents):
-    # sents is a list of list of tokens
-        token_ids = []
-        sen_start_pos_lst = [0]   # starting ids of each sentence 
-        for i,sen in enumerate(sents):
-            temp = [self.vocab.to_index(word) for word in sen]
-            start_pos = sen_start_pos_lst[-1] + len(temp)
-            sen_start_pos_lst.append(start_pos)
-            token_ids += temp
-
-        token_ids += [0] * (self.max_token_len - len(token_ids))
-        sen_start_pos_lst = sen_start_pos_lst[:-1]
-        sen_start_pos_lst += [-1] * (self.max_sen_num - len(sen_start_pos_lst))
-        return token_ids, sen_start_pos_lst
+        self.pred_fc = nn.Linear(2*node_out_dim,OUTPUT_NUM)
     
     def contextual_encoding(self,batched_token_ids):
         h = self.embed(batched_token_ids)  #[batch, seq_len, hidden_len]
@@ -145,6 +174,6 @@ class finalModel(nn.Module):
         head_ent_h = node_h[head_ent_nodes]
         tail_ent_h = node_h[tail_ent_nodes]
 
-        out = self.pred_fc(torch.cat([head_ent_h,tail_ent_h],dim=1))
+        out = self.pred_fc(torch.cat([head_ent_h,tail_ent_h],dim=2))
 
         return out

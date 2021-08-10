@@ -87,7 +87,7 @@ class graphDataset(torch.utils.data.Dataset):
     
     def get_token_ids(self):
     # sents is a list of list of tokens
-        for i,sample in enumerate(self.samples):
+        for j,sample in enumerate(self.samples):
             token_ids = []
             sen_start_pos_lst = [0]   # starting ids of each sentence 
             for i,sen in enumerate(sample['sents']):
@@ -100,11 +100,11 @@ class graphDataset(torch.utils.data.Dataset):
             sen_start_pos_lst = sen_start_pos_lst[:-1]
             sen_start_pos_lst += [-1] * (self.max_sen_num - len(sen_start_pos_lst))
 
-            self.samples[i]['tokenIds'] = token_ids
-            self.samples[i]['senStartPos'] = sen_start_pos_lst
+            self.samples[j]['tokenIds'] = token_ids
+            self.samples[j]['senStartPos'] = sen_start_pos_lst
     
     def create_labels(self):
-        for i,sample in enumerate(self.samples):
+        for j,sample in enumerate(self.samples):
             labels = []
             headEntNodes = []
             tailEntNodes = []
@@ -118,9 +118,9 @@ class graphDataset(torch.utils.data.Dataset):
             headEntNodes += [0] * (self.max_label_num - len(headEntNodes))
             tailEntNodes += [0] * (self.max_label_num - len(tailEntNodes))
 
-            self.samples[i]['headEntNodes'] = headEntNodes
-            self.samples[i]['tailEntNodes'] = tailEntNodes
-            self.samples[i]['finalLabels'] = labels
+            self.samples[j]['headEntNodes'] = headEntNodes
+            self.samples[j]['tailEntNodes'] = tailEntNodes
+            self.samples[j]['finalLabels'] = labels
 
     
     ## Given the AMR Parsing results, create amr graph alignments to the tokens

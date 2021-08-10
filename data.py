@@ -4,6 +4,7 @@ import json
 import torch
 import fastNLP
 import dgl
+import random
 
 with open("/content/drive/MyDrive/DocRE/DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
@@ -61,23 +62,27 @@ def build_vocab(train_data_pth,test_data_pth,dev_data_pth):
     return vocab
 
 class graphDataset(torch.utils.data.Dataset):
-    def __init__(self,data_pth,vocab,max_token_len=256,max_sen_num=10,ignore_label_idx=-1,split='train'):
+    def __init__(self,data_pth,vocab,seed=25,max_token_len=256,ignore_label_idx=-1,split='train'):
         super(graphDataset,self).__init__()
 
         with open(data_pth,'r') as fp:
             self.samples = json.load(fp)
         
         self.create_amr_graph_alighments()
+        print("AMR Graph Alignments Completed!")
         
         self.vocab = vocab
-        self.max_token_len = 256
-        self.max_sen_num = 10
+        self.max_token_len = max_token_len
+        self.max_sen_num = max([len(sample['sents']) for sample in self.samples])
         self.split = split
         self.get_token_ids()
 
         self.max_label_num = max([len(sample['labels']) for sample in self.samples])
         self.ignore_label_idx = ignore_label_idx
         self.create_labels()
+
+        random.seed(seed)
+        random.shuffle(self.samples)
 
     def __getitem__(self,index):
         return self.samples[index]
@@ -138,7 +143,7 @@ class graphDataset(torch.utils.data.Dataset):
             
             return amr_span_start_id,amr_span_end_id+1
 
-        for i,sample in enumerate(self.samples):
+        for j,sample in enumerate(self.samples):
         # sample = samples[0]
             G = nx.DiGraph()
             amr_graphs = sample['amrGraphs']
@@ -178,6 +183,7 @@ class graphDataset(torch.utils.data.Dataset):
             entid2node = {}
             for i,ent in enumerate(sample['vertexSet']):
                 G.add_node(unique_id,attr='entity',ent_type=ent[0]['type'],span=ent[0]['name'],sent_id=[item['sent_id'] for item in ent],pos=[item['pos'] for item in ent])
+                # G.add_node(unique_id,attr='entity',ent_type=ent[0]['type'],span=ent[0]['name'],sent_id=-1,pos=[-1,-1])
                 entid2node[i] = unique_id
                 ent_id = unique_id
                 unique_id += 1
@@ -221,14 +227,13 @@ class graphDataset(torch.utils.data.Dataset):
                         G.add_edge(unique_id,nearest_graph_id,edge_type='MENTION-NEAREST',edge_id=get_edge_idx('MENTION-NEAREST'))
 
                     unique_id += 1
-            self.samples[i]['graphData'] = dict(nodes=[[n, G.nodes[n]] for n in G.nodes()],edges=[[u, v, G.edges[(u,v)]] for u,v in G.edges()])
-            self.samples[i]['Entid2Node'] = entid2node
+            self.samples[j]['graphData'] = dict(nodes=[[n, G.nodes[n]] for n in G.nodes()],edges=[[u, v, G.edges[(u,v)]] for u,v in G.edges()])
+            self.samples[j]['Entid2Node'] = entid2node
 
 
 
 def collate_fn(batch_samples):
     batched_token_id = []
-    batched_sen_start_pos = []
     batched_graph = []
     batched_label = []
     batched_headEnt = []
@@ -236,25 +241,25 @@ def collate_fn(batch_samples):
 
     for sample in batch_samples:
         batched_token_id.append(sample['tokenIds'])
-        batched_sen_start_pos.append(sample['senStartPos'])
 
-        g = dgl.DGLGraph()
-        g.add_nodes(len(sample['graphData']['nodes']))
-        g.add_edges([u for u,_,_ in sample['graphData']['edges']],[v for _,v,_ in sample['graphData']['edges']])
-        batched_graph.append(g)
+        g = nx.DiGraph()
+        g.add_nodes_from(sample['graphData']['nodes'])
+        g.add_edges_from(sample['graphData']['edges'])
+        dgl_g = dgl.from_networkx(g)
+        assert(g.number_of_nodes()==dgl_g.num_nodes())
+
+        batched_graph.append(dgl_g)
 
         batched_label.append(sample['finalLabels'])
         batched_headEnt.append(sample['headEntNodes'])
         batched_tailEnt.append(sample['tailEntNodes'])
     
     batched_token_id = torch.LongTensor(batched_token_id)
-    batched_sen_start_pos = torch.LongTensor(batched_sen_start_pos)
-    batched_graph = dgl.batch(batched_graph)
     batched_label = torch.LongTensor(batched_label)
     batched_headEnt = torch.LongTensor(batched_headEnt)
     batched_tailEnt = torch.LongTensor(batched_tailEnt)
 
-    return dict(token_id=batched_token_id,sen_start_pos=batched_sen_start_pos,graph=batched_graph,label=batched_label,headEnt=batched_headEnt,tailEnt=batched_tailEnt)
+    return dict(sample=batch_samples,token_id=batched_token_id,graph=batched_graph,label=batched_label,headEnt=batched_headEnt,tailEnt=batched_tailEnt)
 
 
 

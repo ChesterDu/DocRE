@@ -13,41 +13,6 @@ REL_TYPE_NUM = 15
 REL_TYPE_EMB_DIM = 768
 OUTPUT_NUM = 97
 
-def get_features(x,sample,model):
-    device = x.device
-    node_in_dim = model.node_in_dim
-    node_features = torch.zeros((len(sample['graphData']['nodes']),node_in_dim)).to(device)
-    sen_start_pos_lst = sample['senStartPos']
-    for i,node_data in sample['graphData']['nodes']:
-        if node_data['attr'] == 'amr':
-            sen_start_pos = sen_start_pos_lst[node_data['sent_id']]
-            span_rep_lst = torch.zeros((node_data['pos'][1] - node_data['pos'][0],node_in_dim)).to(device)
-            for i,pos_id in enumerate(range(node_data['pos'][0],node_data['pos'][1])):
-                span_rep_lst[i] = x[sen_start_pos + pos_id]
-            node_feature = torch.sum(span_rep_lst,dim=0) / len(span_rep_lst)
-        elif node_data['attr'] == 'mention':
-            sen_start_pos = sen_start_pos_lst[node_data['sent_id']]
-            span_rep_lst = torch.zeros((node_data['pos'][1] - node_data['pos'][0],node_in_dim)).to(device)
-            for i,pos_id in enumerate(range(node_data['pos'][0],node_data['pos'][1])):
-                span_rep_lst[i] = x[sen_start_pos + pos_id]
-            node_feature = torch.sum(span_rep_lst,dim=0) / len(span_rep_lst)
-            node_feature += model.entityTypeEmb[ner2id[node_data['ent_type']]]
-        elif node_data['attr'] == 'entity':
-            node_feature = model.entityTypeEmb[ner2id[node_data['ent_type']]]
-        else:
-            pass
-
-        node_features[i-1] = node_feature
-
-    edge_in_dim = model.edge_in_dim
-    edge_features = torch.zeros((len(sample['graphData']['edges']),edge_in_dim)).to(device)
-    for i,edge_data_lst in enumerate(sample['graphData']['edges']):
-        _,_,edge_data = edge_data_lst
-        edge_features[i] = model.relEmb[edge_data['edge_id']]
-
-    return node_features, edge_features
-
-
 
 class LayerRGAT(nn.Module):
     def __init__(self,node_dim,edge_dim,M,K):
@@ -168,6 +133,39 @@ class finalModel(nn.Module):
     def contextual_encoding(self,batched_token_ids):
         h = self.embed(batched_token_ids)  #[batch, seq_len, hidden_len]
         return h
+
+    def init_node_edge_features(self,x,sample):
+        device = x.device
+        node_features = torch.zeros((len(sample['graphData']['nodes']),self.node_in_dim)).to(device)
+        sen_start_pos_lst = sample['senStartPos']
+        for i,node_data in sample['graphData']['nodes']:
+            if node_data['attr'] == 'amr':
+                sen_start_pos = sen_start_pos_lst[node_data['sent_id']]
+                span_rep_lst = torch.zeros((node_data['pos'][1] - node_data['pos'][0],self.node_in_dim)).to(device)
+                for i,pos_id in enumerate(range(node_data['pos'][0],node_data['pos'][1])):
+                    span_rep_lst[i] = x[sen_start_pos + pos_id]
+                node_feature = torch.sum(span_rep_lst,dim=0) / len(span_rep_lst)
+            elif node_data['attr'] == 'mention':
+                sen_start_pos = sen_start_pos_lst[node_data['sent_id']]
+                span_rep_lst = torch.zeros((node_data['pos'][1] - node_data['pos'][0],self.node_in_dim)).to(device)
+                for i,pos_id in enumerate(range(node_data['pos'][0],node_data['pos'][1])):
+                    span_rep_lst[i] = x[sen_start_pos + pos_id]
+                node_feature = torch.sum(span_rep_lst,dim=0) / len(span_rep_lst)
+                node_feature += self.entityTypeEmb[ner2id[node_data['ent_type']]]
+            elif node_data['attr'] == 'entity':
+                node_feature = self.entityTypeEmb[ner2id[node_data['ent_type']]]
+            else:
+                pass
+
+            node_features[i-1] = node_feature
+
+        edge_features = torch.zeros((len(sample['graphData']['edges']),self.edge_in_dim)).to(device)
+        for i,edge_data_lst in enumerate(sample['graphData']['edges']):
+            _,_,edge_data = edge_data_lst
+            edge_features[i] = self.relEmb[edge_data['edge_id']]
+
+        return node_features, edge_features
+
     
     def forward(self,g,node_features,edge_features,head_ent_nodes,tail_ent_nodes):
         node_h = self.gnn(g,node_features,edge_features)

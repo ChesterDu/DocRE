@@ -15,7 +15,7 @@ OUTPUT_NUM = 97
 
 def make_embed(vocab,embed_type,embed_pth):
     if embed_type=='bert-base':
-        embed = BertEmbedding(vocab, model_dir_or_name=embed_pth, layers='-1', pool_method='avg')
+        embed = BertEmbedding(vocab, model_dir_or_name=embed_pth,auto_truncate=True,layers='-1', pool_method='avg')
         node_in_dim = 768
     return embed,node_in_dim
 
@@ -136,6 +136,22 @@ class finalModel(nn.Module):
 
         # Prediction Layer
         self.pred_fc = nn.Linear(2*node_out_dim,OUTPUT_NUM)
+
+        self.init_params()
+    
+    def init_params(self):
+        for p in self.gnn.parameters():
+            if p.dim() >= 2:
+                torch.nn.init.xavier_normal_(p)
+            else:
+                torch.nn.init.normal_(p)
+        torch.nn.init.xavier_normal_(self.entityTypeEmb)
+        torch.nn.init.xavier_normal_(self.relEmb)
+        for p in self.pred_fc.parameters():
+            if p.dim() >= 2:
+                torch.nn.init.xavier_normal_(p)
+            else:
+                torch.nn.init.normal_(p)
     
     def contextual_encoding(self,batched_token_ids):
         h = self.embed(batched_token_ids)  #[batch, seq_len, hidden_len]

@@ -6,9 +6,9 @@ import fastNLP
 import dgl
 import random
 
-with open("DocRED/rel2id.json","r") as fp:
+with open("../DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
-with open("DocRED/ner2id.json","r") as fp:
+with open("../DocRED/ner2id.json","r") as fp:
     ner2id = json.load(fp)
 
 ## Function that convert edge type string to Id
@@ -131,7 +131,7 @@ class graphDataset(torch.utils.data.Dataset):
     ## Given the AMR Parsing results, create amr graph alignments to the tokens
     def create_amr_graph_alighments(self):
         ## Function that find amr node span id
-        def find_amr_span_id(amr_node_id,amr_graph):
+        def find_amr_span_id(amr_node_id,amr_graph,sen_len):
         #     print(amr_graph['alignments'])
             amr_node_id = str(amr_node_id)
             try:
@@ -140,11 +140,15 @@ class graphDataset(torch.utils.data.Dataset):
             except:
                 amr_span_end_id = amr_graph['alignments'][amr_node_id] - 1
                 amr_span_start_id = amr_graph['alignments'][amr_node_id] - 1
+
+            if amr_span_end_id == -2:
+              amr_span_end_id = sen_len - 1
+            if amr_span_start_id == -2:
+              amr_span_start_id = sen_len - 1
             
             return amr_span_start_id,amr_span_end_id+1
 
         for j,sample in enumerate(self.samples):
-        # sample = samples[0]
             G = nx.DiGraph()
             amr_graphs = sample['amrGraphs']
             unique_id = 1
@@ -158,7 +162,7 @@ class graphDataset(torch.utils.data.Dataset):
                             temp = amr_graph['alignments'][str(u)]
                         except:
                             continue
-                        amr_node_pos = find_amr_span_id(u,amr_graph)
+                        amr_node_pos = find_amr_span_id(u,amr_graph,len(sample['sents'][sent_id]))
                         amr_node_span = ' '.join(sample['sents'][sent_id][amr_node_pos[0]:amr_node_pos[1]])
                         G.add_node(unique_id,attr='amr',ent_type='NONE',span=amr_node_span,sent_id=sent_id,pos=amr_node_pos)
                         amrId_to_uniqueId[str(sent_id)+'-'+str(u)] = unique_id
@@ -168,7 +172,7 @@ class graphDataset(torch.utils.data.Dataset):
                             temp = amr_graph['alignments'][str(v)]
                         except:
                             continue
-                        amr_node_pos = find_amr_span_id(v,amr_graph)
+                        amr_node_pos = find_amr_span_id(v,amr_graph,len(sample['sents'][sent_id]))
                         amr_node_span = ' '.join(sample['sents'][sent_id][amr_node_pos[0]:amr_node_pos[1]])
                         G.add_node(unique_id,attr='amr',ent_type='NONE',span=amr_node_span,sent_id=sent_id,pos=amr_node_pos)
                         amrId_to_uniqueId[str(sent_id)+'-'+str(v)] = unique_id
@@ -192,8 +196,10 @@ class graphDataset(torch.utils.data.Dataset):
                     G.add_node(unique_id,attr='mention',ent_type=mention['type'],span=mention_span,sent_id=mention['sent_id'],pos=mention['pos'])
                     mention_idx = mention['pos'][1] - 1
                     G.add_edge(ent_id,unique_id,edge_type='ENT-MENTION',edge_id=get_edge_idx('ENT-MENTION'))
-        #             G.add_edge(unique_id,ent_id,rel='MENTION-ENT')
-
+                    
+                    if amr_graphs == []:
+                      unique_id += 1
+                      continue
                     amr_graph = amr_graphs[mention['sent_id']]
                     
                     match_flag = False
@@ -223,8 +229,8 @@ class graphDataset(torch.utils.data.Dataset):
                             if d < min_d:
                                 nearest_graph_id = amr_node_graph_id
                                 min_d = d
-                        
-                        G.add_edge(unique_id,nearest_graph_id,edge_type='MENTION-NEAREST',edge_id=get_edge_idx('MENTION-NEAREST'))
+                        if nearest_graph_id != -1:
+                            G.add_edge(unique_id,nearest_graph_id,edge_type='MENTION-NEAREST',edge_id=get_edge_idx('MENTION-NEAREST'))
 
                     unique_id += 1
             self.samples[j]['graphData'] = dict(nodes=[[n, G.nodes[n]] for n in G.nodes()],edges=[[u, v, G.edges[(u,v)]] for u,v in G.edges()])

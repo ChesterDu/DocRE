@@ -1,10 +1,10 @@
 import torch.nn.functional as F
 import copy
-from transformers import BertTokenizer, BertModel, BertConfig
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 from data import ner2id
+from fastNLP.embeddings import BertEmbedding
 
 
 ENTITY_TYPE_NUM = 7
@@ -12,6 +12,13 @@ ENTITY_TYPE_EMB_DIM = 768
 REL_TYPE_NUM = 15
 REL_TYPE_EMB_DIM = 768
 OUTPUT_NUM = 97
+
+def make_embed(vocab,embed_type,embed_pth):
+    if embed_type=='bert-base':
+        embed = BertEmbedding(vocab, model_dir_or_name=embed_pth, layers='-1', pool_method='avg')
+        node_in_dim = 768
+    return embed,node_in_dim
+
 
 
 class LayerRGAT(nn.Module):

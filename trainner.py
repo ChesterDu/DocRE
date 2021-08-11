@@ -6,7 +6,7 @@ import copy
 import fitlog
 
 
-class trainner(nn.Module):
+class Trainner(nn.Module):
     def __init__(self,args,model,optimizer,criterion):
         self.log_pth = args.log_pth
         self.checkpoint_pth = args.checkpoint_pth

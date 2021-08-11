@@ -6,9 +6,9 @@ import fastNLP
 import dgl
 import random
 
-with open("/content/drive/MyDrive/DocRE/DocRED/rel2id.json","r") as fp:
+with open("DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
-with open("/content/drive/MyDrive/DocRE/DocRED/ner2id.json","r") as fp:
+with open("DocRED/ner2id.json","r") as fp:
     ner2id = json.load(fp)
 
 ## Function that convert edge type string to Id

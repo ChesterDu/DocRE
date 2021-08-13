@@ -150,39 +150,40 @@ class graphDataset(torch.utils.data.Dataset):
 
         for j,sample in enumerate(self.samples):
             G = nx.DiGraph()
-            amr_graphs = sample['amrGraphs']
             unique_id = 1
-            amrId_to_uniqueId = {}
-            for sent_id,amr_graph in enumerate(amr_graphs):
-                for u,rel,v in amr_graph['edges']:
-                    u_amrId = str(sent_id)+'-'+str(u)
-                    v_amrId = str(sent_id)+'-'+str(v)
-                    if u_amrId not in amrId_to_uniqueId:
-                        try:
-                            temp = amr_graph['alignments'][str(u)]
-                        except:
-                            continue
-                        amr_node_pos = find_amr_span_id(u,amr_graph,len(sample['sents'][sent_id]))
-                        amr_node_span = ' '.join(sample['sents'][sent_id][amr_node_pos[0]:amr_node_pos[1]])
-                        G.add_node(unique_id,attr='amr',ent_type='NONE',span=amr_node_span,sent_id=sent_id,pos=amr_node_pos)
-                        amrId_to_uniqueId[str(sent_id)+'-'+str(u)] = unique_id
-                        unique_id += 1
-                    if v_amrId not in amrId_to_uniqueId:
-                        try:
-                            temp = amr_graph['alignments'][str(v)]
-                        except:
-                            continue
-                        amr_node_pos = find_amr_span_id(v,amr_graph,len(sample['sents'][sent_id]))
-                        amr_node_span = ' '.join(sample['sents'][sent_id][amr_node_pos[0]:amr_node_pos[1]])
-                        G.add_node(unique_id,attr='amr',ent_type='NONE',span=amr_node_span,sent_id=sent_id,pos=amr_node_pos)
-                        amrId_to_uniqueId[str(sent_id)+'-'+str(v)] = unique_id
-                        unique_id += 1
+            amr_graphs = []
+            # amr_graphs = sample['amrGraphs']
+            # amrId_to_uniqueId = {}
+            # for sent_id,amr_graph in enumerate(amr_graphs):
+            #     for u,rel,v in amr_graph['edges']:
+            #         u_amrId = str(sent_id)+'-'+str(u)
+            #         v_amrId = str(sent_id)+'-'+str(v)
+            #         if u_amrId not in amrId_to_uniqueId:
+            #             try:
+            #                 temp = amr_graph['alignments'][str(u)]
+            #             except:
+            #                 continue
+            #             amr_node_pos = find_amr_span_id(u,amr_graph,len(sample['sents'][sent_id]))
+            #             amr_node_span = ' '.join(sample['sents'][sent_id][amr_node_pos[0]:amr_node_pos[1]])
+            #             G.add_node(unique_id,attr='amr',ent_type='NONE',span=amr_node_span,sent_id=sent_id,pos=amr_node_pos)
+            #             amrId_to_uniqueId[str(sent_id)+'-'+str(u)] = unique_id
+            #             unique_id += 1
+            #         if v_amrId not in amrId_to_uniqueId:
+            #             try:
+            #                 temp = amr_graph['alignments'][str(v)]
+            #             except:
+            #                 continue
+            #             amr_node_pos = find_amr_span_id(v,amr_graph,len(sample['sents'][sent_id]))
+            #             amr_node_span = ' '.join(sample['sents'][sent_id][amr_node_pos[0]:amr_node_pos[1]])
+            #             G.add_node(unique_id,attr='amr',ent_type='NONE',span=amr_node_span,sent_id=sent_id,pos=amr_node_pos)
+            #             amrId_to_uniqueId[str(sent_id)+'-'+str(v)] = unique_id
+            #             unique_id += 1
                     
-                    if rel[1:].startswith("ARG") and rel[1:].endswith("-of"):
-                        G.add_edge(amrId_to_uniqueId[v_amrId],amrId_to_uniqueId[u_amrId],edge_type='AMR-'+rel[0:5],edge_id=get_edge_idx(rel[1:5]))
+            #         if rel[1:].startswith("ARG") and rel[1:].endswith("-of"):
+            #             G.add_edge(amrId_to_uniqueId[v_amrId],amrId_to_uniqueId[u_amrId],edge_type='AMR-'+rel[0:5],edge_id=get_edge_idx(rel[1:5]))
                     
-                    else:
-                        G.add_edge(amrId_to_uniqueId[u_amrId],amrId_to_uniqueId[v_amrId],edge_type='AMR-'+rel,edge_id=get_edge_idx(rel[1:]))
+            #         else:
+            #             G.add_edge(amrId_to_uniqueId[u_amrId],amrId_to_uniqueId[v_amrId],edge_type='AMR-'+rel,edge_id=get_edge_idx(rel[1:]))
 
             entid2node = {}
             for i,ent in enumerate(sample['vertexSet']):

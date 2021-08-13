@@ -73,17 +73,18 @@ model = finalModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edg
 
 ## Make Optimizer and Criterion
 # optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
-optimizer = OpenAIAdam(model.parameters(),
-                                  lr=args.lr,
-                                  schedule='warmup_linear',
-                                  warmup=0.002,
-                                  t_total=args.total_steps,
-                                  b1=0.9,
-                                  b2=0.999,
-                                  e=1e-08,
-                                  l2=0.01,
-                                  vector_l2=True,
-                                  max_grad_norm=args.clip)
+# optimizer = OpenAIAdam(model.parameters(),
+#                                   lr=args.lr,
+#                                   schedule='warmup_linear',
+#                                   warmup=0.002,
+#                                   t_total=args.total_steps,
+#                                   b1=0.9,
+#                                   b2=0.999,
+#                                   e=1e-08,
+#                                   l2=0.01,
+#                                   vector_l2=True,
+#                                   max_grad_norm=args.clip)
+optimizer = torch.optim.SGD(model.parameters(),lr=args.lr)
 criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
 
 ## Make Trainner

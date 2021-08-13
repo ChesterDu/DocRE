@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 from data import ner2id
-from fastNLP.embeddings import BertEmbedding
+from fastNLP.embeddings import BertEmbedding, ElmoEmbedding
 
 
 ENTITY_TYPE_NUM = 7
@@ -16,7 +16,10 @@ OUTPUT_NUM = 97
 def make_embed(vocab,embed_type,embed_pth):
     if embed_type=='bert-base':
         embed = BertEmbedding(vocab, model_dir_or_name=embed_pth,auto_truncate=True,layers='-1', pool_method='avg')
-        node_in_dim = 768
+    if embed_type=='Elmo':
+        embed = ElmoEmbedding(vocab, model_dir_or_name=embed_pth, requires_grad=True, layers='mix')
+        
+    node_in_dim = embed.embedding_dim
     return embed,node_in_dim
 
 
@@ -59,7 +62,7 @@ class LayerRGAT(nn.Module):
         return {'a': a, "g":g}
 
     def message_func(self,edges):
-        return {'h_j': edges.dst['h'], 'a':edges.data['a'], 'g':edges.data['g']}
+        return {'h_j': edges.src['h'], 'a':edges.data['a'], 'g':edges.data['g']}
     
     def reduce_func(self,nodes):
         h_j = nodes.mailbox['h_j'].unsqueeze(2).unsqueeze(1) #[Node_num,1,N_i,1,node_dim] [1,K,1,node_dim,node_dim]
@@ -131,7 +134,7 @@ class finalModel(nn.Module):
 
         # GNNs
         self.gnn = multiLayerRGAT(node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L)
-        self.entityTypeEmb = Parameter(torch.randn((ENTITY_TYPE_NUM,ENTITY_TYPE_EMB_DIM)))
+        self.entityTypeEmb = Parameter(torch.randn((node_in_dim,node_in_dim)))
         self.relEmb = Parameter(torch.randn((REL_TYPE_NUM,REL_TYPE_EMB_DIM)))
 
         # Prediction Layer
@@ -145,8 +148,8 @@ class finalModel(nn.Module):
                 torch.nn.init.xavier_normal_(p)
             else:
                 torch.nn.init.normal_(p)
-        torch.nn.init.xavier_normal_(self.entityTypeEmb)
-        torch.nn.init.xavier_normal_(self.relEmb)
+        torch.nn.init.normal_(self.entityTypeEmb)
+        torch.nn.init.normal_(self.relEmb)
         for p in self.pred_fc.parameters():
             if p.dim() >= 2:
                 torch.nn.init.xavier_normal_(p)

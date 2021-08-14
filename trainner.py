@@ -4,9 +4,10 @@ import torch
 import dgl
 import copy
 import fitlog
+import tqdm
 
 
-class Trainner(nn.Module):
+class Trainner():
     def __init__(self,args,model,optimizer,criterion):
         self.log_pth = args.log_pth
         self.checkpoint_pth = args.checkpoint_pth
@@ -21,7 +22,7 @@ class Trainner(nn.Module):
         self.step_count = 0
         self.forward_count = 0
         self.num_acumulation = args.num_acumulation
-        self.metric_check_freq = args.metric_check_feq
+        self.metric_check_freq = args.metric_check_freq
         self.loss_print_freq = args.loss_print_freq
 
         self.epoch_count = 1
@@ -60,15 +61,18 @@ class Trainner(nn.Module):
         return loss
 
     def train(self,train_loader,dev_loader):
+        bar = tqdm.tqdm(total=self.total_steps)
+        bar.update(0)
         while(self.step_count < self.total_steps):
             for batch_data in train_loader:
                 logits = self.forward_step(batch_data)
-                loss = self.backward_step(logits,batch_data['labels'].to(self.device))
+                loss = self.backward_step(logits,batch_data['label'].to(self.device))
                 self.forward_count += 1
 
                 if (self.forward_count % self.num_acumulation) == 0:
                     self.optimizer.step()
                     self.step_count += 1
+                    bar.update(1)
                     fitlog.add_loss(loss.item(),name='Loss',step=self.step_count)
                     self.optimizer.zero_grad()
                     if self.step_count >= self.total_steps:
@@ -80,6 +84,7 @@ class Trainner(nn.Module):
                     
                     if (self.step_count % self.metric_check_freq) == 0:
                         test_acc,test_loss = self.evaluate(dev_loader)
+                        print("Eval Results Step:{}/{} Loss:{} Acc: {}".format(self.step_count,self.total_steps,test_loss,test_acc))
                         fitlog.add_metric({"dev":{"Acc":test_acc}}, step=self.step_count)
                         fitlog.add_metric({"dev":{"Loss":test_loss}}, step=self.step_count)
     
@@ -92,7 +97,7 @@ class Trainner(nn.Module):
             for batch_data in test_loader:
                 logits = self.forward_step(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
-                labels = batch_data['labels'].to(self.device).reshape(-1)
+                labels = batch_data['label'].to(self.device).reshape(-1)
                 loss = self.criterion(logits,labels)
                 test_loss.append(loss.item())
 

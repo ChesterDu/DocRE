@@ -3,7 +3,7 @@ import random
 from random import shuffle
 
 from trainner import Trainner
-from model import finalModel,make_embed
+from model import finalModel,make_embed,debugModel
 from data import graphDataset, build_vocab, collate_fn
 from opt import OpenAIAdam
 from torch.utils.data import DataLoader
@@ -69,22 +69,23 @@ K = args.K
 L = args.L
 device = args.device
 
-model = finalModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
+# model = finalModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
+model = debugModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
 
 ## Make Optimizer and Criterion
 # optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
-# optimizer = OpenAIAdam(model.parameters(),
-#                                   lr=args.lr,
-#                                   schedule='warmup_linear',
-#                                   warmup=0.002,
-#                                   t_total=args.total_steps,
-#                                   b1=0.9,
-#                                   b2=0.999,
-#                                   e=1e-08,
-#                                   l2=0.01,
-#                                   vector_l2=True,
-#                                   max_grad_norm=args.clip)
-optimizer = torch.optim.SGD(model.parameters(),lr=args.lr)
+optimizer = OpenAIAdam(model.parameters(),
+                                  lr=args.lr,
+                                  schedule='warmup_linear',
+                                  warmup=0.002,
+                                  t_total=args.total_steps,
+                                  b1=0.9,
+                                  b2=0.999,
+                                  e=1e-08,
+                                  l2=0.01,
+                                  vector_l2=True,
+                                  max_grad_norm=args.clip)
+# optimizer = torch.optim.SGD(model.parameters(),lr=args.lr)
 criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
 
 ## Make Trainner

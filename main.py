@@ -42,11 +42,11 @@ dev_data_pth = "DocRED/data/dev_amr_annotated_full.json"
 vocab = build_vocab(train_data_pth,test_data_pth,dev_data_pth)
 
 train_dataset = graphDataset(train_data_pth,vocab,seed=args.seed,max_token_len=args.max_token_len,ignore_label_idx=-1,split='train')
-test_dataset = graphDataset(test_data_pth,vocab,seed=args.seed,max_token_len=args.max_token_len,ignore_label_idx=-1,split='test')
+# test_dataset = graphDataset(test_data_pth,vocab,seed=args.seed,max_token_len=args.max_token_len,ignore_label_idx=-1,split='test')
 dev_dataset = graphDataset(dev_data_pth,vocab,seed=args.seed,max_token_len=args.max_token_len,ignore_label_idx=-1,split='dev')
 
 train_loader = Dataloader(train_dataset, num_workers=2, batch_size=args.train_batch_size, shuffle=True, collate_fn = collate_fn)
-test_loader = Dataloader(test_dataset, num_workers=2, batch_size=args.eval_batch_size, shuffle=True, collate_fn= collate_fn)
+# test_loader = Dataloader(test_dataset, num_workers=2, batch_size=args.eval_batch_size, shuffle=True, collate_fn= collate_fn)
 dev_loader = Dataloader(dev_dataset, num_workers=2, batch_size=args.train_batch_size, shuffle=True, collate_fn= collate_fn)
 
 ## Make model
@@ -68,4 +68,4 @@ criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
 
 ## Make Trainner
 trainner = Trainner(args,model,optimizer,criterion)
-trainner.train(train_loader,dev_loader,test_loader)
+trainner.train(train_loader,dev_loader)

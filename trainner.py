@@ -59,7 +59,7 @@ class Trainner(nn.Module):
 
         return loss
 
-    def train(self,train_loader,dev_loader,test_loader):
+    def train(self,train_loader,dev_loader):
         while(self.step_count < self.total_steps):
             for batch_data in train_loader:
                 logits = self.forward_step(batch_data)

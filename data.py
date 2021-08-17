@@ -77,7 +77,7 @@ class graphDataset(torch.utils.data.Dataset):
         self.split = split
         self.get_token_ids()
 
-        self.max_label_num = max([len(sample['labels']) for sample in self.samples])
+        self.max_label_num = max([len(sample['vertexSet']) for sample in self.samples]) ** 2
         self.ignore_label_idx = ignore_label_idx
         self.create_labels()
 
@@ -114,10 +114,22 @@ class graphDataset(torch.utils.data.Dataset):
             headEntNodes = []
             tailEntNodes = []
             entid2node = sample['Entid2Node']
+            posPairSet = []
             for i, label_data in enumerate(sample['labels']):
                 labels.append(rel2id[label_data['r']])
                 headEntNodes.append(entid2node[label_data['h']])
                 tailEntNodes.append(entid2node[label_data['t']])
+                posPairSet.append((label_data['h'],label_data['t']))
+            
+            entNum = len(sample['vertexSet'])
+            for i in range(entNum):
+                for j in range(entNum):
+                    if i==j:
+                        continue
+                    if (i,j) not in posPairSet:
+                        headEntNodes.append(entid2node[i])
+                        tailEntNodes.append(entid2node[j])
+                        labels.append(0)
 
             labels += [self.ignore_label_idx] * (self.max_label_num - len(labels))
             headEntNodes += [0] * (self.max_label_num - len(headEntNodes))

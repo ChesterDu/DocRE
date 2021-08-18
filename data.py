@@ -116,10 +116,10 @@ class graphDataset(torch.utils.data.Dataset):
             word_id += [0] * (self.max_token_len - len(word_id))
             sen_start_pos_lst = sen_start_pos_lst[:-1]
             
-            self.samples['doc_id']['tokenIds'] = word_id
+            self.samples[doc_id]['tokenIds'] = word_id
 
             ## create entity-mention graphs
-            G = nx.digraph()
+            G = nx.DiGraph()
             span_node_index = np.zeros(self.max_token_len)
             node_ner_id = []
             node_span_pos = []
@@ -130,7 +130,7 @@ class graphDataset(torch.utils.data.Dataset):
             entity2mentino_nodes=[]
 
             for ent_id, mentions in enumerate(doc['vertexSet']):
-                entity2node[ent_id] = node_id
+                entity2node.append(node_id)
                 entity2mentino_nodes.append([])
                 ent_node_id = node_id
                 G.add_node(node_id)
@@ -376,7 +376,7 @@ def collate_fn(batch_samples):
     batched_label = torch.LongTensor(batched_label)
     batched_entPair = torch.LongTensor(batched_entPair)
 
-    return dict(sample=batch_samples,token_id=batched_token_id,graph=batched_graph,label=batched_label,entPair=batched_entPair)
+    return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,entPair=batched_entPair)
 
 
 

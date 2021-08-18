@@ -1,16 +1,19 @@
 from fastNLP.core.vocabulary import Vocabulary
 import networkx as nx
 import json
+from networkx.algorithms.assortativity import pairs
 import torch
 import fastNLP
 import dgl
 import random
+import numpy as np
 
 with open("../DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
 with open("../DocRED/ner2id.json","r") as fp:
     ner2id = json.load(fp)
 
+attr2id = {'entity':0,"mention":1,"amr":2}
 ## Function that convert edge type string to Id
 def get_edge_idx(edge_type_str):    
         if edge_type_str in ['location', 'destination', 'path']:
@@ -68,18 +71,22 @@ class graphDataset(torch.utils.data.Dataset):
         with open(data_pth,'r') as fp:
             self.samples = json.load(fp)
         
-        self.create_amr_graph_alighments()
-        print("AMR Graph Alignments Completed!")
+        # self.create_amr_graph_alighments()
+        # print("AMR Graph Alignments Completed!")
         
         self.vocab = vocab
         self.max_token_len = max_token_len
         self.max_sen_num = max([len(sample['sents']) for sample in self.samples])
         self.split = split
-        self.get_token_ids()
+        # self.get_token_ids()
 
-        self.max_label_num = max([len(sample['vertexSet']) for sample in self.samples]) ** 2
+        self.max_ent_num = max([len(sample['vertexSet']) for sample in self.samples])
+        self.max_pair_num = self.max_ent_num * (self.max_ent_num - 1)
         self.ignore_label_idx = ignore_label_idx
-        self.create_labels()
+        # self.create_labels()
+
+        self.process_data()
+        self.print_stat()
         
 
         random.seed(seed)
@@ -91,6 +98,92 @@ class graphDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.samples)
     
+    def print_stat(self):
+        print("==============Data Statistic===================")
+        print("Split: {} || Sample Num: {} || Max Token Num: {} || Max Ent Num: {} || Max Pair Num: {}".format(self.split,len(self.samples),self.max_token_len,self.max_ent_num,self.max_pair_num))
+
+    def process_data(self):
+        for doc_id,doc in enumerate(self.samples):
+            ## convert word to ids
+            word_id = []
+            sen_start_pos_lst = [0]
+            for i, sen in enumerate(doc['sents']):
+                sen_id = [self.vocab.to_index(word) for word in sen]
+                sen_start_pos = sen_start_pos_lst[-1] + len(sen_id)
+                sen_start_pos_lst.append(sen_start_pos)
+                word_id += sen_id
+            
+            word_id += [0] * (self.max_token_len - len(word_id))
+            sen_start_pos_lst = sen_start_pos_lst[:-1]
+            
+            self.samples['doc_id']['tokenIds'] = word_id
+
+            ## create entity-mention graphs
+            G = nx.digraph()
+            span_node_index = np.zeros(self.max_token_len)
+            node_ner_id = []
+            node_span_pos = []
+            node_attr_id = []
+            edge_type_id = []
+            node_id = 0
+            entity2node = []
+            entity2mentino_nodes=[]
+
+            for ent_id, mentions in enumerate(doc['vertexSet']):
+                entity2node[ent_id] = node_id
+                entity2mentino_nodes.append([])
+                ent_node_id = node_id
+                G.add_node(node_id)
+                node_attr_id.append(attr2id['entity'])
+                node_span_pos.append([-1,-1])
+                node_ner_id.append(ner2id[mentions[0]['type']])
+                node_id += 1
+                for men_id, mention in enumerate(mentions):
+                    entity2mentino_nodes[ent_id].append(node_id)
+                    men_start_pos = mention['pos'][0] + sen_start_pos_lst[mention['sent_id']]
+                    men_end_pos = mention['pos'][1] + sen_start_pos_lst[mention['sent_id']]
+                    mention['globalPos'] = [men_start_pos,men_end_pos]
+                    span_node_index[men_start_pos:men_end_pos] = node_id
+                    G.add_node(node_id)
+                    node_attr_id.append(attr2id['mention'])
+                    node_span_pos.append([men_start_pos,men_end_pos])
+                    node_ner_id.append(ner2id[mention['type']])
+                    G.add_edge(ent_node_id,node_id)
+                    edge_type_id.append(get_edge_idx('ENT-MENTION'))
+                    node_id += 1
+
+            ## TODO: attach AMR graphs
+            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,attr_id=node_attr_id)
+            edge_data = dict(edge_id=edge_type_id)
+            self.samples[doc_id]['graphData'] = dict(nodes=[n for n in G.nodes()],edges=[[u, v] for u,v in G.edges()],ndata=node_data,edata=edge_data)
+            self.samples[doc_id]['mentionId'] = list(span_node_index)
+
+            ## create label, head and tail entities
+            labels = []
+            entPairs = []
+            for i,label_data in enumerate(doc['labels']):
+                pair = [entity2node[label_data['h']],entity2node[label_data['t']]]
+                labels.append(rel2id[label_data['r']])
+                entPairs.append(pair)
+            
+            entNum = len(doc['vertexSet'])
+            for i in range(entNum):
+                for j in range(entNum):
+                    if i==j:
+                        continue
+                    pair = [entity2node[i],entity2node[j]]
+                    if pair not in entPairs:
+                        entPairs.append(pair)
+                        labels.append(0)
+            
+            labels += [-1] * (self.max_pair_num - len(labels))
+            entPairs += [[0,0] for i in range(self.max_pair_num-len(entPairs))]
+
+            self.samples[doc_id]['finalLabels'] = labels
+            self.samples[doc_id]['entPairs'] = entPairs
+
+
+
     def get_token_ids(self):
     # sents is a list of list of tokens
         for j,sample in enumerate(self.samples):
@@ -254,32 +347,36 @@ class graphDataset(torch.utils.data.Dataset):
 
 def collate_fn(batch_samples):
     batched_token_id = []
+    batched_mention_id = []
     batched_graph = []
     batched_label = []
-    batched_headEnt = []
-    batched_tailEnt = []
+    batched_entPair = []
 
     for sample in batch_samples:
         batched_token_id.append(sample['tokenIds'])
+        batched_mention_id.append(sample['mentionId'])
 
         g = nx.DiGraph()
         g.add_nodes_from(sample['graphData']['nodes'])
         g.add_edges_from(sample['graphData']['edges'])
         dgl_g = dgl.from_networkx(g)
+        dgl_g.ndata['ner_id'] = torch.LongTensor(sample['graphData']['ndata']['ner_id'])
+        dgl_g.ndata['span_pos'] = torch.LongTensor(sample['graphData']['ndata']['span_pos'])
+        dgl_g.ndata['attr_id'] = torch.LongTensor(sample['graphData']['ndata']['attr_id'])
+        dgl_g.edata['edge_id'] = torch.LongTensor(sample['graphData']['edata']['edge_id'])
         assert(g.number_of_nodes()==dgl_g.num_nodes())
 
         batched_graph.append(dgl_g)
 
         batched_label.append(sample['finalLabels'])
-        batched_headEnt.append(sample['headEntNodes'])
-        batched_tailEnt.append(sample['tailEntNodes'])
+        batched_entPair.append(sample['entPairs'])
     
     batched_token_id = torch.LongTensor(batched_token_id)
+    batched_mention_id = torch.LongTensor(batched_mention_id)
     batched_label = torch.LongTensor(batched_label)
-    batched_headEnt = torch.LongTensor(batched_headEnt)
-    batched_tailEnt = torch.LongTensor(batched_tailEnt)
+    batched_entPair = torch.LongTensor(batched_entPair)
 
-    return dict(sample=batch_samples,token_id=batched_token_id,graph=batched_graph,label=batched_label,headEnt=batched_headEnt,tailEnt=batched_tailEnt)
+    return dict(sample=batch_samples,token_id=batched_token_id,graph=batched_graph,label=batched_label,entPair=batched_entPair)
 
 
 

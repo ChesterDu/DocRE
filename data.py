@@ -80,6 +80,7 @@ class graphDataset(torch.utils.data.Dataset):
         self.max_label_num = max([len(sample['vertexSet']) for sample in self.samples]) ** 2
         self.ignore_label_idx = ignore_label_idx
         self.create_labels()
+        
 
         random.seed(seed)
         random.shuffle(self.samples)
@@ -109,7 +110,7 @@ class graphDataset(torch.utils.data.Dataset):
             self.samples[j]['senStartPos'] = sen_start_pos_lst
     
     def create_labels(self):
-        for j,sample in enumerate(self.samples):
+        for idx,sample in enumerate(self.samples):
             labels = []
             headEntNodes = []
             tailEntNodes = []
@@ -135,9 +136,9 @@ class graphDataset(torch.utils.data.Dataset):
             headEntNodes += [0] * (self.max_label_num - len(headEntNodes))
             tailEntNodes += [0] * (self.max_label_num - len(tailEntNodes))
 
-            self.samples[j]['headEntNodes'] = headEntNodes
-            self.samples[j]['tailEntNodes'] = tailEntNodes
-            self.samples[j]['finalLabels'] = labels
+            self.samples[idx]['headEntNodes'] = headEntNodes
+            self.samples[idx]['tailEntNodes'] = tailEntNodes
+            self.samples[idx]['finalLabels'] = labels
 
     
     ## Given the AMR Parsing results, create amr graph alignments to the tokens

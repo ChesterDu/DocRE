@@ -69,8 +69,8 @@ K = args.K
 L = args.L
 device = args.device
 
-# model = finalModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
-model = debugModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
+model = finalModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
+# model = debugModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
 
 ## Make Optimizer and Criterion
 # optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)

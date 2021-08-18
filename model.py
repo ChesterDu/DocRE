@@ -131,6 +131,8 @@ class finalModel(nn.Module):
 
         # Embedding Layer
         self.embed = copy.deepcopy(embed)
+        for p in embed.parameters():
+            p.requires_grad=True
 
         # GNNs
         self.gnn = multiLayerRGAT(node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L)
@@ -208,7 +210,7 @@ class finalModel(nn.Module):
 class debugGNN(nn.Module):
     def __init__(self,node_in_dim,node_dim):
         ## 
-        super(LayerRGAT,self).__init__()
+        super(debugGNN,self).__init__()
 
         # Hyperparameter
         self.node_dim = node_dim
@@ -231,7 +233,8 @@ class debugGNN(nn.Module):
 
         g.update_all(self.message_func,self.reduce_func)
 
-        out_features = g.ndata.pop('h')
+        # out_features = g.ndata.pop('h')
+        out_features = g.ndata['h']
 
         return out_features
 
@@ -244,7 +247,7 @@ class debugGNN(nn.Module):
 
 class debugModel(nn.Module):
     def __init__(self,embed,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L):
-        super(finalModel,self).__init__()
+        super(debugModel,self).__init__()
 
         # Model HyperParameters
         self.node_in_dim = node_in_dim

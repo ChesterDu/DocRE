@@ -71,9 +71,11 @@ class Trainner():
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            test_acc,test_loss = self.evaluate(dev_loader)
-            print("Eval Results Epoch: {} Step:{}/{} Loss:{} Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_loss,test_acc))
-            fitlog.add_metric({"dev":{"Acc":test_acc}}, epoch=self.epoch_count)
+            test_loss, test_total_acc, test_na_acc, test_non_na_acc = self.evaluate(dev_loader)
+            print("Eval Results Epoch: {} Step:{}/{} Loss:{} Acc: {} NA Acc: {} Non NA Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_loss,test_total_acc, test_na_acc, test_non_na_acc))
+            fitlog.add_metric({"dev":{"Acc":test_total_acc}}, epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"NA Acc":test_na_acc}}, epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Non NA Acc":test_non_na_acc}}, epoch=self.epoch_count)
             fitlog.add_metric({"dev":{"Loss":test_loss}},epoch=self.epoch_count)
             self.epoch_count += 1
     
@@ -84,6 +86,8 @@ class Trainner():
             test_loss = []
             correct_pred = 0
             total_pred = 0
+            total_na_pred = 0
+            na_correct_pred = 0
             for batch_data in test_loader:
                 logits = self.forward_step(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
@@ -99,8 +103,17 @@ class Trainner():
                 total_pred += prediction.shape[0]
                 correct_pred += torch.sum(prediction == labels).item()
 
-            test_loss = sum(test_loss) / len(test_loss)
-            test_acc = correct_pred / total_pred
+                na_indices = (labels == 0).nonzero()
+                na_pred = prediction[na_indices]
+                
+                na_correct_pred += torch.sum(na_pred == 0).item()
+                total_na_pred += na_pred.shape[0]
 
-        return test_acc, test_loss
+
+            test_loss = sum(test_loss) / len(test_loss)
+            test_total_acc = correct_pred / total_pred
+            test_na_acc = na_correct_pred / total_na_pred
+            test_non_na_acc = (correct_pred - na_correct_pred) / (total_pred - total_na_pred)
+
+        return test_loss, test_total_acc, test_na_acc, test_non_na_acc
 

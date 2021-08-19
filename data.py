@@ -123,6 +123,7 @@ class graphDataset(torch.utils.data.Dataset):
             span_node_index = np.zeros(self.max_token_len)
             node_ner_id = []
             node_span_pos = []
+            node_span_mask = []
             node_attr_id = []
             edge_type_id = []
             node_id = 0
@@ -136,6 +137,7 @@ class graphDataset(torch.utils.data.Dataset):
                 G.add_node(node_id)
                 node_attr_id.append(attr2id['entity'])
                 node_span_pos.append([-1,-1])
+                node_span_mask.append([0] * self.max_token_len)
                 node_ner_id.append(ner2id[mentions[0]['type']])
                 node_id += 1
                 for men_id, mention in enumerate(mentions):
@@ -147,13 +149,16 @@ class graphDataset(torch.utils.data.Dataset):
                     G.add_node(node_id)
                     node_attr_id.append(attr2id['mention'])
                     node_span_pos.append([men_start_pos,men_end_pos])
+                    temp = np.zeros(self.max_token_len)
+                    temp[men_start_pos:men_end_pos] = 1
+                    node_span_mask.append(list(temp))
                     node_ner_id.append(ner2id[mention['type']])
                     G.add_edge(ent_node_id,node_id)
                     edge_type_id.append(get_edge_idx('ENT-MENTION'))
                     node_id += 1
 
             ## TODO: attach AMR graphs
-            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,attr_id=node_attr_id)
+            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,span_mask=node_span_mask,attr_id=node_attr_id)
             edge_data = dict(edge_id=edge_type_id)
             self.samples[doc_id]['graphData'] = dict(nodes=[n for n in G.nodes()],edges=[[u, v] for u,v in G.edges()],ndata=node_data,edata=edge_data)
             self.samples[doc_id]['mentionId'] = list(span_node_index)
@@ -362,6 +367,7 @@ def collate_fn(batch_samples):
         dgl_g = dgl.from_networkx(g)
         dgl_g.ndata['ner_id'] = torch.LongTensor(sample['graphData']['ndata']['ner_id'])
         dgl_g.ndata['span_pos'] = torch.LongTensor(sample['graphData']['ndata']['span_pos'])
+        dgl_g.ndata['span_mask'] = torch.BoolTensor(sample['graphData']['ndata']['span_mask'])
         dgl_g.ndata['attr_id'] = torch.LongTensor(sample['graphData']['ndata']['attr_id'])
         dgl_g.edata['edge_id'] = torch.LongTensor(sample['graphData']['edata']['edge_id'])
         assert(g.number_of_nodes()==dgl_g.num_nodes())
@@ -376,7 +382,7 @@ def collate_fn(batch_samples):
     batched_label = torch.LongTensor(batched_label)
     batched_entPair = torch.LongTensor(batched_entPair)
 
-    return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,entPair=batched_entPair)
+    return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,ent_pair=batched_entPair)
 
 
 

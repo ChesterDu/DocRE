@@ -8,49 +8,34 @@ import tqdm
 
 
 class Trainner():
-    def __init__(self,args,model,optimizer,criterion):
-        self.log_pth = args.log_pth
-        self.checkpoint_pth = args.checkpoint_pth
+    def __init__(self,config,model,optimizer,criterion):
+        self.log_pth = config.log_pth
+        self.checkpoint_pth = config.checkpoint_pth
         
-        self.model = copy.deepcopy(model).to(args.device)
+        self.model = copy.deepcopy(model).to(config.device)
         self.optimizer = optimizer
         self.criterion = criterion
 
         self.time = 0
 
-        self.total_steps = args.total_steps
+        self.total_steps = config.total_steps
         self.step_count = 0
         self.forward_count = 0
-        self.num_acumulation = args.num_acumulation
-        self.metric_check_freq = args.metric_check_freq
-        self.loss_print_freq = args.loss_print_freq
+        self.num_acumulation = config.num_acumulation
+        self.metric_check_freq = config.metric_check_freq
+        self.loss_print_freq = config.loss_print_freq
 
         self.epoch_count = 1
 
-        self.lr = args.lr
-        self.device = args.device
+        self.lr = config.lr
+        self.device = config.device
 
         fitlog.set_log_dir(self.log_pth)
-        fitlog.add_hyper(args)
+        fitlog.add_hyper(config)
     
     
     def forward_step(self,batch_data):
-        batched_x = self.model.embed(batch_data['token_id'].to(self.device))
-
-        batched_node_features = None
-        batched_edge_features = None
-        node_offset = 0
-        for i,sample in enumerate(batch_data['sample']):
-            node_features, edge_features = self.model.init_node_edge_features(batched_x[i],sample)
-            batched_node_features = torch.cat([batched_node_features,node_features],dim=0) if batched_node_features != None else node_features
-            batched_edge_features = torch.cat([batched_edge_features,edge_features],dim=0) if batched_edge_features != None else edge_features
-            batch_data['headEnt'][i] += node_offset
-            batch_data['tailEnt'][i] += node_offset
-
-            node_offset += len(sample['graphData']['nodes'])
-        
-        batched_g = dgl.batch(batch_data['graph']).to(self.device)
-        out = self.model(batched_g,batched_node_features,batched_edge_features,batch_data['headEnt'].to(self.device),batch_data['tailEnt'].to(self.device))
+        out = self.model(batch_data)
 
         return out
     
@@ -61,6 +46,7 @@ class Trainner():
         return loss
 
     def train(self,train_loader,dev_loader):
+        self.model.init_params()
         bar = tqdm.tqdm(total=self.total_steps)
         bar.update(0)
         while(self.step_count < self.total_steps):

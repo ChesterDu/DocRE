@@ -137,7 +137,7 @@ class finalModel(nn.Module):
         self.node_type_emb_dim = config.node_attr_emb_dim
 
         # Activation Func
-        self.pred_activation = make_activation(config.pred_activatino)
+        self.pred_activation = make_activation(config.pred_activation)
 
         # Embedding Layer: Convert word id to word feature representation
         if config.embed_type=='bert-base':
@@ -179,9 +179,25 @@ class finalModel(nn.Module):
                 torch.nn.init.xavier_normal_(p)
             else:
                 torch.nn.init.normal_(p)
-        torch.nn.init.xavier_normal_(self.nerEmb)
-        torch.nn.init.xavier_normal_(self.attrEmb)
-        torch.nn.init.xavier_normal_(self.relEmb)
+
+        for p in self.nerEmb.parameters():
+            if p.dim() >= 2:
+                torch.nn.init.xavier_normal_(p)
+            else:
+                torch.nn.init.normal_(p)
+
+        for p in self.attrEmb.parameters():
+            if p.dim() >= 2:
+                torch.nn.init.xavier_normal_(p)
+            else:
+                torch.nn.init.normal_(p)
+
+        for p in self.relEmb.parameters():
+            if p.dim() >= 2:
+                torch.nn.init.xavier_normal_(p)
+            else:
+                torch.nn.init.normal_(p)
+
         for p in self.pred_fc.parameters():
             if p.dim() >= 2:
                 torch.nn.init.xavier_normal_(p)
@@ -222,17 +238,18 @@ class finalModel(nn.Module):
 
     
     def forward(self,batch_data):
-        device = self.embed.device
+        device = self.config.device
         token_id = batch_data['token_id'].to(device) # [bsz,doc_len]
         token_feature = self.embed(token_id) # [bsz,doc_len,token_emb_dim]
+        bsz = token_id.shape[0]
 
         batched_node_in_feature = None
         batched_edge_in_feature = None
         node_offset = 0
         ent_pair_pos = batch_data['ent_pair'].to(device) #[bsz,max_pair_num,2]
+        batch_data['graph'] = [batch_data['graph'][i].to(device) for i in range(bsz)]
         for i,g in enumerate(batch_data['graph']):    
-            g = g.to(device)
-
+          
             if self.config.node_span_pool_method == 'avg':
                 node_span_mask = g.ndata['span_mask'] # [node_num,doc_len]
                 node_span_feature = node_span_mask.unsqueeze(-1) * (token_feature[i].unsqueeze(0).expand(g.num_nodes(),-1,-1)) # [node_num, doc_len, feature_dim]
@@ -251,8 +268,8 @@ class finalModel(nn.Module):
 
             edge_in_feature = self.relEmb(g.edata['edge_id'])
             
-            batched_node_in_feature = torch.cat([batched_node_in_feature,node_in_feature],dim=0) if batched_node_in_feature is None else node_in_feature
-            batched_edge_in_feature = torch.cat([batched_edge_in_feature,edge_in_feature],dim=0) if batched_edge_in_feature is None else edge_in_feature
+            batched_node_in_feature = torch.cat([batched_node_in_feature,node_in_feature],dim=0) if batched_node_in_feature != None else node_in_feature
+            batched_edge_in_feature = torch.cat([batched_edge_in_feature,edge_in_feature],dim=0) if batched_edge_in_feature != None else edge_in_feature
 
             ent_pair_pos[i] += node_offset
             node_offset += g.num_nodes()
@@ -261,7 +278,7 @@ class finalModel(nn.Module):
         h_feature = node_out_feature[ent_pair_pos[:,:,0]]
         t_feature = node_out_feature[ent_pair_pos[:,:,1]]
 
-        out = self.pred_fc(torch.cat(h_feature,t_feature,torch.abs(h_feature-t_feature)), h_feature * t_feature)
+        out = self.pred_fc(torch.cat([h_feature,t_feature,torch.abs(h_feature-t_feature), h_feature * t_feature],dim=-1))
 
         return out
         

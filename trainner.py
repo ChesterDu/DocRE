@@ -7,12 +7,14 @@ import fitlog
 import tqdm
 
 
-class Trainner():
+class Trainner(nn.Module):
     def __init__(self,config,model,optimizer,criterion):
+        super(Trainner,self).__init__()
+        
         self.log_pth = config.log_pth
         self.checkpoint_pth = config.checkpoint_pth
         
-        self.model = copy.deepcopy(model).to(config.device)
+        self.model = model.to(config.device)
         self.optimizer = optimizer
         self.criterion = criterion
 
@@ -43,6 +45,9 @@ class Trainner():
         loss = self.criterion(logits.reshape(-1,logits.shape[-1]),labels.reshape(-1))
         loss.backward()
 
+        for p in self.model.embed.parameters():
+            print(p.grad)
+
         return loss
 
     def train(self,train_loader,dev_loader):
@@ -51,9 +56,14 @@ class Trainner():
         bar.update(0)
         while(self.step_count < self.total_steps):
             self.model.train()
+            epoch_loss = 0
             for batch_data in train_loader:
-                logits = self.forward_step(batch_data)
-                loss = self.backward_step(logits,batch_data['label'].to(self.device))
+                logits = self.model(batch_data)
+                logits = logits.reshape(-1,logits.shape[-1])
+                labels = batch_data['label'].to(self.device).reshape(-1)
+                loss = self.criterion(logits,labels)
+                epoch_loss += loss.item()
+                loss.backward()
                 self.forward_count += 1
 
                 if (self.forward_count % self.num_acumulation) == 0:
@@ -67,16 +77,16 @@ class Trainner():
 
 
                     if (self.step_count % self.loss_print_freq) == 0:
-                        print("Step:{}/{} Loss:{}".format(self.step_count,self.total_steps,loss.item()))
+                        print("Step:{}/{} || Loss:{}".format(self.step_count,self.total_steps,epoch_loss/self.forward_count))
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
             test_loss, test_total_acc, test_na_acc, test_non_na_acc = self.evaluate(dev_loader)
-            print("Eval Results Epoch: {} Step:{}/{} Loss:{} Acc: {} NA Acc: {} Non NA Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_loss,test_total_acc, test_na_acc, test_non_na_acc))
-            fitlog.add_metric({"dev":{"Acc":test_total_acc}}, epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"NA Acc":test_na_acc}}, epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Non NA Acc":test_non_na_acc}}, epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Loss":test_loss}},epoch=self.epoch_count)
+            print("Eval Results Epoch: {} || Step:{}/{} || Loss:{} || Acc: {} || NA Acc: {} || Non NA Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_loss,test_total_acc, test_na_acc, test_non_na_acc))
+            fitlog.add_metric({"dev":{"Acc":test_total_acc}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"NA Acc":test_na_acc}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Non NA Acc":test_non_na_acc}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Loss":test_loss}},step=self.step_count,epoch=self.epoch_count)
             self.epoch_count += 1
     
 
@@ -89,21 +99,21 @@ class Trainner():
             total_na_pred = 0
             na_correct_pred = 0
             for batch_data in test_loader:
-                logits = self.forward_step(batch_data)
+                logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 labels = batch_data['label'].to(self.device).reshape(-1)
                 loss = self.criterion(logits,labels)
                 test_loss.append(loss.item())
 
                 prediction = torch.argmax(logits,dim=1)
-                indices = (labels != -1).nonzero()
+                indices = (labels != -1).nonzero().squeeze(-1)
                 labels = labels[indices]
                 prediction = prediction[indices]
 
                 total_pred += prediction.shape[0]
                 correct_pred += torch.sum(prediction == labels).item()
 
-                na_indices = (labels == 0).nonzero()
+                na_indices = (labels == 0).nonzero().squeeze(-1)
                 na_pred = prediction[na_indices]
                 
                 na_correct_pred += torch.sum(na_pred == 0).item()

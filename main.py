@@ -4,7 +4,7 @@ from random import shuffle
 
 from config import parse_config
 from trainner import Trainner
-from model import finalModel,make_embed,debugModel
+from model import finalModel,debugModel
 from data import graphDataset, build_vocab, collate_fn
 from opt import OpenAIAdam
 from torch.utils.data import DataLoader
@@ -14,6 +14,7 @@ import torch
 
 
 config = parse_config()
+print(config)
 
 
 random.seed(config.seed)

@@ -168,20 +168,23 @@ class graphDataset(torch.utils.data.Dataset):
             entPairs = []
             for i,label_data in enumerate(doc['labels']):
                 pair = [entity2node[label_data['h']],entity2node[label_data['t']]]
-                labels.append(rel2id[label_data['r']])
-                entPairs.append(pair)
+                if pair not in entPairs:
+                    labels.append(rel2id[label_data['r']])
+                    entPairs.append(pair)
             
             entNum = len(doc['vertexSet'])
+            naPairs = []
             for i in range(entNum):
                 for j in range(entNum):
                     if i==j:
                         continue
                     pair = [entity2node[i],entity2node[j]]
                     if pair not in entPairs:
-                        entPairs.append(pair)
+                        naPairs.append(pair)
                         labels.append(0)
             
             labels += [-1] * (self.max_pair_num - len(labels))
+            entPairs += naPairs
             entPairs += [[0,0] for i in range(self.max_pair_num-len(entPairs))]
 
             self.samples[doc_id]['finalLabels'] = labels

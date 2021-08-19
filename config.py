@@ -32,7 +32,7 @@ def parse_config():
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','relu'])
 
 
-    parser.add_argument('--lr',default=1e-4,type=float)
+    parser.add_argument('--lr',default=1e-3,type=float)
     parser.add_argument('--clip',default=1.0,type=float)
     parser.add_argument('--num_acumulation',default=1,type=int)
     parser.add_argument('--total_steps',default=10000,type=int)

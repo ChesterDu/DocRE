@@ -50,6 +50,7 @@ class Trainner():
         bar = tqdm.tqdm(total=self.total_steps)
         bar.update(0)
         while(self.step_count < self.total_steps):
+            self.model.train()
             for batch_data in train_loader:
                 logits = self.forward_step(batch_data)
                 loss = self.backward_step(logits,batch_data['label'].to(self.device))
@@ -68,14 +69,17 @@ class Trainner():
                     if (self.step_count % self.loss_print_freq) == 0:
                         print("Step:{}/{} Loss:{}".format(self.step_count,self.total_steps,loss.item()))
                     
-                    if (self.step_count % self.metric_check_freq) == 0:
-                        test_acc,test_loss = self.evaluate(dev_loader)
-                        print("Eval Results Step:{}/{} Loss:{} Acc: {}".format(self.step_count,self.total_steps,test_loss,test_acc))
-                        fitlog.add_metric({"dev":{"Acc":test_acc}}, step=self.step_count)
-                        fitlog.add_metric({"dev":{"Loss":test_loss}}, step=self.step_count)
+                    # if (self.step_count % self.metric_check_freq) == 0:
+            print('Evaluation Start......')
+            test_acc,test_loss = self.evaluate(dev_loader)
+            print("Eval Results Epoch: {} Step:{}/{} Loss:{} Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_loss,test_acc))
+            fitlog.add_metric({"dev":{"Acc":test_acc}}, epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Loss":test_loss}},epoch=self.epoch_count)
+            self.epoch_count += 1
     
 
     def evaluate(self,test_loader):
+        self.model.eval()
         with torch.no_grad():
             test_loss = []
             correct_pred = 0

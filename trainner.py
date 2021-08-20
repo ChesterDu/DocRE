@@ -61,7 +61,23 @@ class Trainner(nn.Module):
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 labels = batch_data['label'].to(self.device).reshape(-1)
-                loss = self.criterion(logits,labels)
+                loss = self.criterion(logits,labels,reduce='None')
+
+                na_indices = (labels == 0).nonzero().squeeze(-1)
+                ignore_indices = (labels == -1).nonzero().squeeze(-1)
+                num_na = na_indices.shape[0]
+                num_pos = labels.shape[0] - num_na
+                
+                loss_weight = torch.FloatTensor([1/num_pos * labels.shape[0]]).to(self.device)
+                loss_weight[na_indices] = 1/num_na
+                loss_weight[ignore_indices] = 0
+
+                
+                loss = torch.mul(loss,loss_weight)
+                loss = torch.sum(loss) / (labels.shape[0] - ignore_indices.shape[0])
+
+
+
                 epoch_loss += loss.item()
                 loss.backward()
                 self.forward_count += 1

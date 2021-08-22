@@ -61,20 +61,20 @@ class Trainner(nn.Module):
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 labels = batch_data['label'].to(self.device).reshape(-1)
-                loss = self.criterion(logits,labels,reduce='None')
+                loss = self.criterion(logits,labels)
 
-                na_indices = (labels == 0).nonzero().squeeze(-1)
-                ignore_indices = (labels == -1).nonzero().squeeze(-1)
-                num_na = na_indices.shape[0]
-                num_pos = labels.shape[0] - num_na
+                # na_indices = (labels == 0).nonzero().squeeze(-1)
+                # ignore_indices = (labels == -1).nonzero().squeeze(-1)
+                # num_na = na_indices.shape[0]
+                # num_pos = labels.shape[0] - num_na
                 
-                loss_weight = torch.FloatTensor([1/num_pos * labels.shape[0]]).to(self.device)
-                loss_weight[na_indices] = 1/num_na
-                loss_weight[ignore_indices] = 0
+                # loss_weight = torch.FloatTensor([1/num_pos * labels.shape[0]]).to(self.device)
+                # loss_weight[na_indices] = 1/num_na
+                # loss_weight[ignore_indices] = 0
 
                 
-                loss = torch.mul(loss,loss_weight)
-                loss = torch.sum(loss) / (labels.shape[0] - ignore_indices.shape[0])
+                # loss = torch.mul(loss,loss_weight)
+                # loss = torch.sum(loss) / (labels.shape[0] - ignore_indices.shape[0])
 
 
 
@@ -97,12 +97,12 @@ class Trainner(nn.Module):
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            test_loss, test_total_acc, test_na_acc, test_non_na_acc = self.evaluate(dev_loader)
-            print("Eval Results Epoch: {} || Step:{}/{} || Loss:{} || Acc: {} || NA Acc: {} || Non NA Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_loss,test_total_acc, test_na_acc, test_non_na_acc))
+            test_total_acc, test_na_acc, test_non_na_acc = self.evaluate(dev_loader)
+            print("Eval Results Epoch: {} || Step:{}/{} || Acc: {} || NA Acc: {} || Non NA Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_total_acc, test_na_acc, test_non_na_acc))
             fitlog.add_metric({"dev":{"Acc":test_total_acc}}, step=self.step_count,epoch=self.epoch_count)
             fitlog.add_metric({"dev":{"NA Acc":test_na_acc}}, step=self.step_count,epoch=self.epoch_count)
             fitlog.add_metric({"dev":{"Non NA Acc":test_non_na_acc}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Loss":test_loss}},step=self.step_count,epoch=self.epoch_count)
+            # fitlog.add_metric({"dev":{"Loss":test_loss}},step=self.step_count,epoch=self.epoch_count)
             self.epoch_count += 1
     
 
@@ -118,8 +118,8 @@ class Trainner(nn.Module):
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 labels = batch_data['label'].to(self.device).reshape(-1)
-                loss = self.criterion(logits,labels)
-                test_loss.append(loss.item())
+                # loss = self.criterion(logits,labels)
+                # test_loss.append(loss.item())
 
                 prediction = torch.argmax(logits,dim=1)
                 indices = (labels != -1).nonzero().squeeze(-1)
@@ -136,10 +136,10 @@ class Trainner(nn.Module):
                 total_na_pred += na_pred.shape[0]
 
 
-            test_loss = sum(test_loss) / len(test_loss)
+            # test_loss = sum(test_loss) / len(test_loss)
             test_total_acc = correct_pred / total_pred
             test_na_acc = na_correct_pred / total_na_pred
             test_non_na_acc = (correct_pred - na_correct_pred) / (total_pred - total_na_pred)
 
-        return test_loss, test_total_acc, test_na_acc, test_non_na_acc
+        return test_total_acc, test_na_acc, test_non_na_acc
 

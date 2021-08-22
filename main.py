@@ -1,11 +1,11 @@
 import argparse
 import random
 from random import shuffle
-
+from collections import defaultdict
 from config import parse_config
 from trainner import Trainner
 from model import finalModel,debugModel
-from data import graphDataset, build_vocab, collate_fn
+from data import graphDataset, build_vocab, collate_fn, rel2id
 from opt import OpenAIAdam
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
@@ -53,7 +53,30 @@ optimizer = OpenAIAdam(model.parameters(),
                                   vector_l2=True,
                                   max_grad_norm=config.clip)
 # optimizer = torch.optim.SGD(model.parameters(),lr=config.lr)
-criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
+
+label_count = defaultdict(int)
+total_label = 0
+for sample in train_dataset.samples:
+    entPair = []
+    for label_data in sample['labels']:
+        pair = [label_data['h'],label_data['t']]
+        if pair not in entPair:
+            entPair.append(pair)
+            label_count[rel2id[label_data['r']]] += 1
+    
+    num_ent = len(sample['vertexSet'])
+    num_na = num_ent * (num_ent - 1) - len(entPair)
+
+    label_count[0] += num_na
+    total_label += num_ent * (num_ent - 1)
+
+label_weight_lst = []
+for k in label_count:
+  label_weight_lst.append(1 / label_count[k])
+
+label_weight = torch.FloatTensor(label_weight_lst).to(config.device)
+
+criterion = torch.nn.CrossEntropyLoss(weight=label_weight,ignore_index=-1)
 
 ## Make Trainner
 trainner = Trainner(config,model,optimizer,criterion)

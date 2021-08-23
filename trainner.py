@@ -52,8 +52,11 @@ class Trainner(nn.Module):
 
     def train(self,train_loader,dev_loader):
         self.model.init_params()
+        print(self.model.parameters)
         bar = tqdm.tqdm(total=self.total_steps)
         bar.update(0)
+
+        epoch_num = (self.total_steps - 1) // len(train_loader) + 1
         while(self.step_count < self.total_steps):
             self.model.train()
             epoch_loss = 0
@@ -93,7 +96,7 @@ class Trainner(nn.Module):
 
 
                     if (self.step_count % self.loss_print_freq) == 0:
-                        print("Step:{}/{} || Loss:{}".format(self.step_count,self.total_steps,epoch_loss/self.forward_count))
+                        print("Epoch:{}/{} || Step:{}/{} || Loss:{}".format(self.epoch_count,epoch_num,self.step_count,self.total_steps,epoch_loss/self.forward_count))
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')

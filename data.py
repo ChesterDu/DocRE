@@ -72,7 +72,6 @@ class graphDataset(torch.utils.data.Dataset):
             self.samples = json.load(fp)
         
         random.seed(config.seed)
-        random.shuffle(self.samples)
         
         # self.create_amr_graph_alighments()
         # print("AMR Graph Alignments Completed!")

@@ -7,6 +7,7 @@ def parse_config():
     parser.add_argument('--train_batch_size',default=4,type=int)
     parser.add_argument('--eval_batch_size',default=8,type=int)
     parser.add_argument('--max_token_len',default=400,type=int)
+    parser.add_argument('--naPairs_num',default=25,type=int)
 
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)

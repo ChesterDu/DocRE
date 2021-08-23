@@ -73,7 +73,7 @@ class LayerRGAT(nn.Module):
         return {'a': a, "g":g}
 
     def message_func(self,edges):
-        return {'h_j': edges.src['h'], 'a':edges.data['a'], 'g':edges.data['g']}
+        return {'h_j': edges.dst['h'], 'a':edges.data['a'], 'g':edges.data['g']}
     
     def reduce_func(self,nodes):
         h_j = nodes.mailbox['h_j'].unsqueeze(2).unsqueeze(1) #[Node_num,1,N_i,1,node_dim] [1,K,1,node_dim,node_dim]

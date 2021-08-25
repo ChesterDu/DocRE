@@ -30,8 +30,8 @@ def parse_config():
     parser.add_argument('--use_attr_feature',action='store_true')
     parser.add_argument('--use_loss_weight',action='store_true')
 
-    parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','relu'])
-    parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','relu'])
+    parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
+    parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
 
 
     parser.add_argument('--lr',default=1e-3,type=float)

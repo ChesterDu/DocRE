@@ -54,11 +54,11 @@ class Trainner(nn.Module):
     def train(self,train_loader,dev_loader):
         self.model.init_params()
         print(self.model.parameters)
+        self.total_steps = (self.epoch * len(train_loader) - 1) // self.num_acumulation + 1
         bar = tqdm.tqdm(total=self.total_steps)
         bar.update(0)
 
         # epoch_num = (self.total_steps - 1) // len(train_loader) + 1
-        self.total_steps = (self.epoch * len(train_loader) - 1) // self.num_acumulation + 1
         # while(self.step_count < self.total_steps):
         while(self.epoch_count <= self.epoch):
             self.model.train()

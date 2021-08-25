@@ -52,6 +52,7 @@ class Trainner(nn.Module):
 
     def train(self,train_loader,dev_loader):
         self.model.init_params()
+        print(self.model.parameters)
         bar = tqdm.tqdm(total=self.total_steps)
         bar.update(0)
         while(self.step_count < self.total_steps):

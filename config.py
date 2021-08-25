@@ -4,6 +4,7 @@ import argparse
 def parse_config():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed',default=20,type=int)
+    parser.add_argument('--epoch',default=20,type=int)
     parser.add_argument('--train_batch_size',default=4,type=int)
     parser.add_argument('--eval_batch_size',default=8,type=int)
     parser.add_argument('--max_token_len',default=400,type=int)

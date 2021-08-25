@@ -21,6 +21,7 @@ class Trainner(nn.Module):
         self.time = 0
 
         self.total_steps = config.total_steps
+        self.epoch = config.epoch
         self.step_count = 0
         self.forward_count = 0
         self.num_acumulation = config.num_acumulation
@@ -56,8 +57,10 @@ class Trainner(nn.Module):
         bar = tqdm.tqdm(total=self.total_steps)
         bar.update(0)
 
-        epoch_num = (self.total_steps - 1) // len(train_loader) + 1
-        while(self.step_count < self.total_steps):
+        # epoch_num = (self.total_steps - 1) // len(train_loader) + 1
+        self.total_steps = (self.epoch * len(train_loader) - 1) // self.num_acumulation + 1
+        # while(self.step_count < self.total_steps):
+        while(self.epoch_count <= self.epoch):
             self.model.train()
             epoch_loss = 0
             for batch_data in train_loader:
@@ -96,7 +99,7 @@ class Trainner(nn.Module):
 
 
                     if (self.step_count % self.loss_print_freq) == 0:
-                        print("Epoch:{}/{} || Step:{}/{} || Loss:{}".format(self.epoch_count,epoch_num,self.step_count,self.total_steps,epoch_loss/self.forward_count))
+                        print("Epoch:{}/{} || Step:{}/{} || Loss:{}".format(self.epoch_count,self.epoch,self.step_count,self.total_steps,epoch_loss/self.forward_count))
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')

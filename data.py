@@ -65,32 +65,34 @@ def build_vocab(train_data_pth,test_data_pth,dev_data_pth):
     return vocab
 
 class graphDataset(torch.utils.data.Dataset):
-    def __init__(self,data_pth,vocab,seed=25,max_token_len=256,ignore_label_idx=-1,split='train'):
+    def __init__(self,config,data_pth,vocab,ignore_label_idx=-1,split='train'):
         super(graphDataset,self).__init__()
 
         with open(data_pth,'r') as fp:
             self.samples = json.load(fp)
         
+        random.seed(config.seed)
+        
         # self.create_amr_graph_alighments()
         # print("AMR Graph Alignments Completed!")
         
         self.vocab = vocab
-        self.max_token_len = max_token_len
+        self.max_token_len = config.max_token_len
         self.max_sen_num = max([len(sample['sents']) for sample in self.samples])
         self.split = split
         # self.get_token_ids()
 
         self.max_ent_num = max([len(sample['vertexSet']) for sample in self.samples])
-        self.max_pair_num = self.max_ent_num * (self.max_ent_num - 1)
+        # self.max_pair_num = self.max_ent_num * (self.max_ent_num - 1)
+        self.max_pair_num = max([len(sample['labels']) for sample in self.samples])
         self.ignore_label_idx = ignore_label_idx
+
+        self.naPairs_num = config.naPairs_num
         # self.create_labels()
 
         self.process_data()
         self.print_stat()
-        
 
-        random.seed(seed)
-        random.shuffle(self.samples)
 
     def __getitem__(self,index):
         return self.samples[index]
@@ -181,65 +183,19 @@ class graphDataset(torch.utils.data.Dataset):
                     pair = [entity2node[i],entity2node[j]]
                     if pair not in entPairs:
                         naPairs.append(pair)
-                        labels.append(0)
+                        # labels.append(0)
             
-            labels += [-1] * (self.max_pair_num - len(labels))
-            entPairs += naPairs
-            entPairs += [[0,0] for i in range(self.max_pair_num-len(entPairs))]
+            # labels += [-1] * (self.max_pair_num - len(labels))
+            # entPairs += naPairs
+            # entPairs += [[0,0] for i in range(self.max_pair_num-len(entPairs))]
 
-            self.samples[doc_id]['finalLabels'] = labels
+            self.samples[doc_id]['entLabels'] = labels
             self.samples[doc_id]['entPairs'] = entPairs
+            self.samples[doc_id]['naPairs'] = naPairs
+            self.samples[doc_id]['naPairs_num'] = self.naPairs_num
+            if self.split in ['test','dev']:
+                self.samples[doc_id]['naPairs_num'] = len(naPairs)
 
-
-
-    def get_token_ids(self):
-    # sents is a list of list of tokens
-        for j,sample in enumerate(self.samples):
-            token_ids = []
-            sen_start_pos_lst = [0]   # starting ids of each sentence 
-            for i,sen in enumerate(sample['sents']):
-                temp = [self.vocab.to_index(word) for word in sen]
-                start_pos = sen_start_pos_lst[-1] + len(temp)
-                sen_start_pos_lst.append(start_pos)
-                token_ids += temp
-
-            token_ids += [0] * (self.max_token_len - len(token_ids))
-            sen_start_pos_lst = sen_start_pos_lst[:-1]
-            sen_start_pos_lst += [-1] * (self.max_sen_num - len(sen_start_pos_lst))
-
-            self.samples[j]['tokenIds'] = token_ids
-            self.samples[j]['senStartPos'] = sen_start_pos_lst
-    
-    def create_labels(self):
-        for idx,sample in enumerate(self.samples):
-            labels = []
-            headEntNodes = []
-            tailEntNodes = []
-            entid2node = sample['Entid2Node']
-            posPairSet = []
-            for i, label_data in enumerate(sample['labels']):
-                labels.append(rel2id[label_data['r']])
-                headEntNodes.append(entid2node[label_data['h']])
-                tailEntNodes.append(entid2node[label_data['t']])
-                posPairSet.append((label_data['h'],label_data['t']))
-            
-            entNum = len(sample['vertexSet'])
-            for i in range(entNum):
-                for j in range(entNum):
-                    if i==j:
-                        continue
-                    if (i,j) not in posPairSet:
-                        headEntNodes.append(entid2node[i])
-                        tailEntNodes.append(entid2node[j])
-                        labels.append(0)
-
-            labels += [self.ignore_label_idx] * (self.max_label_num - len(labels))
-            headEntNodes += [0] * (self.max_label_num - len(headEntNodes))
-            tailEntNodes += [0] * (self.max_label_num - len(tailEntNodes))
-
-            self.samples[idx]['headEntNodes'] = headEntNodes
-            self.samples[idx]['tailEntNodes'] = tailEntNodes
-            self.samples[idx]['finalLabels'] = labels
 
     
     ## Given the AMR Parsing results, create amr graph alignments to the tokens
@@ -353,7 +309,7 @@ class graphDataset(torch.utils.data.Dataset):
 
 
 
-def collate_fn(batch_samples):
+def collate_fn(batch_samples):  
     batched_token_id = []
     batched_mention_id = []
     batched_graph = []
@@ -376,9 +332,18 @@ def collate_fn(batch_samples):
         assert(g.number_of_nodes()==dgl_g.num_nodes())
 
         batched_graph.append(dgl_g)
+        
+        random.shuffle(sample['naPairs'])
+        naPairs = sample['naPairs'][:sample['naPairs_num']]
+        pairs = sample['entPairs'] + naPairs
+        labels = sample['entLabels'] + [0] * len(naPairs)
 
-        batched_label.append(sample['finalLabels'])
-        batched_entPair.append(sample['entPairs'])
+        batched_label.append(labels)
+        batched_entPair.append(pairs)
+    
+    max_pair_num = max([len(labels) for labels in batched_label])
+    batched_label = [item + [-1] * (max_pair_num - len(item)) for item in batched_label]
+    batched_entPair = [item + [[0,0] for i in range(max_pair_num - len(item))] for item in batched_entPair]
     
     batched_token_id = torch.LongTensor(batched_token_id)
     batched_mention_id = torch.LongTensor(batched_mention_id)
@@ -387,6 +352,3 @@ def collate_fn(batch_samples):
 
     return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,ent_pair=batched_entPair)
 
-
-
-        

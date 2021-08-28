@@ -13,6 +13,7 @@ def parse_config():
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
     parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])
+    parser.add_argument('--fix_embed_weight',action='store_true')
 
     parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
 

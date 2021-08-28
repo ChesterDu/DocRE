@@ -150,9 +150,14 @@ class finalModel(nn.Module):
             self.embed = BertEmbedding(vocab, model_dir_or_name=config.embed_pth,auto_truncate=True,layers='-1', pool_method=config.embed_pool_method)
         if config.embed_type=='Elmo':
             self.embed = ElmoEmbedding(vocab, model_dir_or_name=config.embed_pth, requires_grad=True, layers='mix')
-        for p in self.embed.parameters():
-            p.requires_grad=True
-        
+
+        if config.fix_embed_weight:
+            for p in self.embed.parameters():
+                p.requires_grad = False
+        else:
+            for p in self.embed.parameters():
+                p.requires_grad = True
+            
         self.node_in_dim = self.embed.embedding_dim
         if config.use_ner_feature:
             self.node_in_dim += config.node_ner_emb_dim

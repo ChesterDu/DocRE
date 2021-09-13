@@ -2,13 +2,11 @@ import dgl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.modules import activation
-from ..model import make_activation
 from torch.nn.parameter import Parameter
 import dgl.function as fn
 
 class LayerRGAT(nn.Module):
-    def __init__(self,node_dim,edge_dim,M,K,activation='relu'):
+    def __init__(self,node_dim,edge_dim,M,K,activation):
         ## 
         # M: number of relation attention head
         # K: number of node attention head
@@ -28,7 +26,7 @@ class LayerRGAT(nn.Module):
         self.rel_att_W2 = Parameter(torch.randn((M,node_dim,1)))
         self.rel_att_b2 = Parameter(torch.randn((M,1,1)))
 
-        self.activation = make_activation(activation)
+        self.activation = activation
 
         self.node_out_fc = nn.Sequential(nn.Linear(2 * node_dim,node_dim), self.activation)
 
@@ -86,9 +84,9 @@ class LayerRGAT(nn.Module):
 
 
 class multiLayerRGAT(nn.Module):
-    def __init__(self,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,activation='relu'):
+    def __init__(self,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,activation):
         super(multiLayerRGAT,self).__init__()
-        self.activation = make_activation(activation)
+        self.activation = activation
         self.RGATS = nn.ModuleList([LayerRGAT(node_dim,edge_dim,M,K,activation) for _ in range(L)])
         self.node_in_fc = nn.Sequential(nn.Linear(node_in_dim,node_dim),self.activation)
         self.edge_in_fc = nn.Sequential(nn.Linear(edge_in_dim,edge_dim),self.activation)

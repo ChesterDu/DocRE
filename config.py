@@ -7,9 +7,10 @@ def parse_config():
     parser.add_argument('--epoch',default=20,type=int)
     parser.add_argument('--train_batch_size',default=4,type=int)
     parser.add_argument('--eval_batch_size',default=8,type=int)
-    parser.add_argument('--max_token_len',default=400,type=int)
+    parser.add_argument('--max_token_len',default=530,type=int)
     parser.add_argument('--naPairs_num',default=25,type=int)
 
+    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat'])
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
     parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])
@@ -47,7 +48,7 @@ def parse_config():
     parser.add_argument('--log_pth',default='../logs/',type=str)
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
 
-    config = parser.parse_args()
+    config = parser.parse_args(args=[])
 
     return config
 

@@ -1,7 +1,5 @@
 import dgl
-from dgl.batch import batch, batch_hetero
-from networkx.algorithms.cuts import edge_expansion
-from torch._C import device
+from dgl.batch import batch
 import torch.nn.functional as F
 import copy
 import torch
@@ -77,7 +75,7 @@ class finalModel(nn.Module):
 
         # GNNs
         if config.gnn == 'rgat':
-            self.gnn = multiLayerRGAT(self.node_in_dim,config.node_dim,config.node_out_dim,config.edge_in_dim,config.edge_dim,config.M,config.K,config.L,activation=config.gnn_activation)
+            self.gnn = multiLayerRGAT(self.node_in_dim,config.node_dim,config.node_out_dim,config.edge_type_emb_dim,config.edge_dim,config.M,config.K,config.L,activation=make_activation(config.gnn_activation))
             self.relEmb = nn.Embedding(REL_TYPE_NUM,config.edge_type_emb_dim)
             for p in self.relEmb.parameters():
                 if p.dim() >= 2:
@@ -85,7 +83,7 @@ class finalModel(nn.Module):
                 else:
                     torch.nn.init.normal_(p)
         if config.gnn == 'rgcn':
-            self.gnn = multiLayerRGCN(self.node_in_dim,config.node_dim,config.node_out_dim,REL_TYPE_NUM,config.L,activation=config.gnn_activation)
+            self.gnn = multiLayerRGCN(self.node_in_dim,config.node_dim,config.node_out_dim,REL_TYPE_NUM,config.L,activation=make_activation(config.gnn_activation))
         
         for p in self.gnn.parameters():
             if p.dim() >= 2:
@@ -94,9 +92,9 @@ class finalModel(nn.Module):
                 torch.nn.init.normal_(p)
 
         # Prediction Layer
-        self.pred_fc = nn.Sequential(nn.Linear(4*self.node_out_dim,2*self.node_out_dim),
+        self.pred_fc = nn.Sequential(nn.Linear(4*config.node_out_dim,2*config.node_out_dim),
                                      self.pred_activation,
-                                     nn.Linear(2*self.node_out_dim,OUTPUT_NUM)
+                                     nn.Linear(2*config.node_out_dim,OUTPUT_NUM)
                                     )
         for p in self.pred_fc.parameters():
             if p.dim() >= 2:
@@ -151,7 +149,7 @@ class finalModel(nn.Module):
 
         # Get Representation of Each ENtity. Predict pair-wise relation
         h_feature = node_out_feature[ent_pair_pos[:,:,0]]
-        t_feature = node_out_feature[ent_pair_pos[:,:,1]]1
+        t_feature = node_out_feature[ent_pair_pos[:,:,1]]
 
         out = self.pred_fc(torch.cat([h_feature,t_feature,torch.abs(h_feature-t_feature), h_feature * t_feature],dim=-1))
 

@@ -158,7 +158,7 @@ class graphDataset(torch.utils.data.Dataset):
                     node_span_mask.append(list(temp))
                     node_ner_id.append(ner2id[mention['type']])
                     edge_type_id.append(get_edge_idx('ENT-MENTION'))
-                    G.add_edge(ent_node_id,node_id,edge_type=edge_type_id)
+                    G.add_edge(ent_node_id,node_id,edge_type=get_edge_idx('ENT-MENTION'))
                     node_id += 1
 
             ## TODO: attach AMR graphs

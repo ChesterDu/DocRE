@@ -39,7 +39,7 @@ class LayerRGCN(nn.Module):
 
 class multiLayerRGCN(nn.Module):
     def __init__(self,node_in_dim,node_dim,node_out_dim,rel_num,L,activation='relu'):
-        super(MultiLayerRGCN).__init__()
+        super(multiLayerRGCN).__init__()
         self.L = L
         self.node_in_dim = node_in_dim
         self.node_dim = node_dim
@@ -48,12 +48,10 @@ class multiLayerRGCN(nn.Module):
         self.node_out_fc = nn.Linear(node_dim,node_out_dim)
         self.gnns = nn.ModuleList([LayerRGCN(node_dim,node_dim,rel_num,activation=activation) for _ in range(L)])
 
-    def forward(self,g,node_in_feats,edge_in_feats):
+    def forward(self,g,node_in_feat):
         device = self.node_in_fc.device
-        h = F.relu(self.node_in_fc(node_in_feats['h'].to(device)))
+        h = F.relu(self.node_in_fc(node_in_feat.to(device)))
         g.ndata['h'] = h
-        g.edata['rel_type'] = edge_in_feats['rel_type'].to(device)
-        g.edata['norm'] = edge_in_feats['norm'].to(device)
 
         for layer in self.gnns:
             layer(g)

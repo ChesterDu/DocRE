@@ -132,13 +132,60 @@ class graphDataset(torch.utils.data.Dataset):
             entity2node = []
             entity2mentino_nodes=[]
 
+            ## TODO: attach AMR graphs
+            amr_graphs = doc['amrGraphs']
+            amr_id2node_id = {}
+            for sent_id,amr_graph in enumerate(amr_graphs):
+                alignments = amr_graph['alignments']
+                for u,rel,v in amr_graph['edges']:
+                    u_amrId = str(sent_id) + str(u)
+                    v_amrId = str(sent_id) + str(v)
+                    if u not in amr_id2node_id:
+                        G.add_node(node_id)
+                        node_attr_id.append(attr2id['amr'])
+                        node_ner_id.append(len(ner2id))  ## additional id for amr node
+                        temp = np.zeros(self.max_token_len)
+                        try:
+                            amr_span_id_lst = np.array(alignments[str(u)]) - 1 + sen_start_pos_lst[sent_id]    ## amr parsing results index start from 1
+                            temp[amr_span_id_lst] = 1
+                            node_span_mask.append(list(temp))
+                        except:
+                            node_span_mask.append([0] * self.max_token_len)
+                        
+
+                        amr_id2node_id[u_amrId] = node_id
+                        node_id += 1
+                    if v not in amr_id2node_id:
+                        G.add_node(node_id)
+                        node_attr_id.append(attr2id['amr'])
+                        node_ner_id.append(len(ner2id))  ## additional id for amr node
+                        temp = np.zeros(self.max_token_len)
+                        try:
+                            alignments[str(v)]
+                        except:
+                            print(doc['sents'][sent_id])
+                        amr_span_id_lst = np.array(alignments[str(v)]) - 1 + sen_start_pos_lst[sent_id]    ## amr parsing results index start from 1
+                        temp[amr_span_id_lst] = 1
+                        node_span_mask.append(list(temp))
+
+                        amr_id2node_id[v_amrId] = node_id
+                        node_id += 1
+
+                    if rel[1:].startswith("ARG") and rel[1:].endswith("-of"):
+                        G.add_edge(amr_id2node_id[v_amrId],amr_id2node_id[u_amrId])
+                        edge_type_id.append(get_edge_idx(rel[1:5]))
+                    
+                    else:
+                        G.add_edge(amr_id2node_id[u_amrId],amr_id2node_id[v_amrId])
+                        edge_type_id.append(get_edge_idx(rel[1:]))
+
             for ent_id, mentions in enumerate(doc['vertexSet']):
                 entity2node.append(node_id)
                 entity2mentino_nodes.append([])
                 ent_node_id = node_id
                 G.add_node(node_id)
                 node_attr_id.append(attr2id['entity'])
-                node_span_pos.append([-1,-1])
+                # node_span_pos.append([-1,-1])
                 node_span_mask.append([0] * self.max_token_len)
                 node_ner_id.append(ner2id[mentions[0]['type']])
                 node_id += 1
@@ -150,17 +197,56 @@ class graphDataset(torch.utils.data.Dataset):
                     span_node_index[men_start_pos:men_end_pos] = node_id
                     G.add_node(node_id)
                     node_attr_id.append(attr2id['mention'])
-                    node_span_pos.append([men_start_pos,men_end_pos])
+                    # node_span_pos.append([men_start_pos,men_end_pos])
                     temp = np.zeros(self.max_token_len)
                     temp[men_start_pos:men_end_pos] = 1
                     node_span_mask.append(list(temp))
                     node_ner_id.append(ner2id[mention['type']])
                     G.add_edge(ent_node_id,node_id)
                     edge_type_id.append(get_edge_idx('ENT-MENTION'))
-                    node_id += 1
+                    
+                    # Find AMR node alignment
+                    amr_graph = amr_graphs[mention['sent_id']]
 
-            ## TODO: attach AMR graphs
-            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,span_mask=node_span_mask,attr_id=node_attr_id)
+                    mention_pos = men_end_pos - 1
+                    match_flag = False
+                    for amr_node_id in amr_graph['nodes']:
+                        amr_id = str(mention['sent_id']) + amr_node_id
+                        amr_node_id = amr_id2node_id[amr_id]
+                        span_mask = node_span_mask[amr_node_id]
+                        amr_span_index = np.nonzero(np.array(span_mask) == 1)
+                        amr_span_start_pos,amr_span_end_pos = int(np.min(amr_span_index)),int(np.max(amr_span_index))
+                        if (mention_pos >= amr_span_start_pos) and (mention_pos <= amr_span_end_pos):
+                            G.add_edge(node_id,amr_node_id)
+                            edge_type_id.append(get_edge_idx('MENTION-AMR'))
+                            match_flag = True
+                            break
+                    
+                    if match_flag == False:       ## Find nearest amr node
+                        min_dist = 100000000
+                        min_dist_amr_node = -1
+                        for amr_node_id in amr_graph['nodes']:
+                            amr_id = str(mention['sent_id']) + amr_node_id
+                            amr_node_id = amr_id2node_id[amr_id]
+                            span_mask = node_span_mask[amr_node_id]
+                            amr_span_index = np.nonzero(np.array(span_mask) == 1)
+                            amr_span_start_pos,amr_span_end_pos = int(np.min(amr_span_index)),int(np.max(amr_span_index))
+
+                            dist = abs(mention_pos - amr_span_start_pos) + abs(mention_pos - amr_span_end_pos)
+                            if dist < min_dist:
+                                min_dist = dist
+                                min_dist_amr_node = amr_node_id
+                        
+                        if min_dist_amr_node != -1:
+                            G.add_edge(node_id,min_dist_amr_node)
+                            edge_type_id.append(get_edge_idx('MENTION-NEAREST'))
+
+                    node_id += 1
+                            
+
+                    
+            # node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,span_mask=node_span_mask,attr_id=node_attr_id)
+            node_data = dict(ner_id=node_ner_id,span_mask=node_span_mask,attr_id=node_attr_id)
             edge_data = dict(edge_id=edge_type_id)
             self.samples[doc_id]['graphData'] = dict(nodes=[n for n in G.nodes()],edges=[[u, v] for u,v in G.edges()],ndata=node_data,edata=edge_data)
             self.samples[doc_id]['mentionId'] = list(span_node_index)

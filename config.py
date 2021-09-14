@@ -48,7 +48,7 @@ def parse_config():
     parser.add_argument('--log_pth',default='../logs/',type=str)
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
 
-    config = parser.parse_args(args=[])
+    config = parser.parse_args()
 
     return config
 

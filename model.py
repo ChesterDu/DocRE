@@ -4,9 +4,6 @@ import torch.nn.functional as F
 import copy
 import torch
 import torch.nn as nn
-from torch.nn.parameter import Parameter
-from torch.utils import data
-from data import ner2id
 from fastNLP.embeddings import BertEmbedding, ElmoEmbedding
 from gnn.rgat import multiLayerRGAT
 from gnn.rgcn import multiLayerRGCN

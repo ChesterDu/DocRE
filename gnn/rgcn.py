@@ -20,9 +20,9 @@ class LayerRGCN(nn.Module):
     
     def msg_func(self,edges):
         W = self.weight[edges.data['edge_id']]
-        print(W.shape,edges.src['h'].shape)
+        # print(W.shape,edges.src['h'].shape)
         msg = torch.bmm(edges.src['h'].unsqueeze(1),W).squeeze(1)
-        print(msg.shape,edges.data['norm'].shape)
+        # print(msg.shape,edges.data['norm'].shape)
         msg = msg * edges.data['norm'].unsqueeze(-1)
 
         return {'msg':msg}

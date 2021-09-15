@@ -5,6 +5,8 @@ import dgl
 import copy
 import fitlog
 import tqdm
+import torch.nn.functional as F
+from model import OUTPUT_NUM
 
 
 class Trainner(nn.Module):
@@ -102,11 +104,14 @@ class Trainner(nn.Module):
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            test_total_acc, test_na_acc, test_non_na_acc = self.evaluate(dev_loader)
-            print("Eval Results Epoch: {} || Step:{}/{} || Acc: {} || NA Acc: {} || Non NA Acc: {}".format(self.epoch_count,self.step_count,self.total_steps,test_total_acc, test_na_acc, test_non_na_acc))
-            fitlog.add_metric({"dev":{"Acc":test_total_acc}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"NA Acc":test_na_acc}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Non NA Acc":test_non_na_acc}}, step=self.step_count,epoch=self.epoch_count)
+            results = self.evaluate(dev_loader)
+            print("Eval Results Epoch: {} || Step:{}/{} || NA Acc: {} || NA F1: {} || Non NA Acc: {} || Non NA F1: {}".format(self.epoch_count,self.step_count,self.total_steps,results['na_p'],results['na_f1'],results['nonNa_p'],results['nonNa_f1']))
+            fitlog.add_metric({"dev":{"NA Acc":results['na_p']}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"NA Recall":results['na_r']}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"NA F1":results['na_f1']}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Non NA Acc":results['nonNa_p']}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Non NA Recall":results['nonNa_r']}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Non NA F1":results['nonNa_f1']}}, step=self.step_count,epoch=self.epoch_count)
             # fitlog.add_metric({"dev":{"Loss":test_loss}},step=self.step_count,epoch=self.epoch_count)
             self.epoch_count += 1
     
@@ -114,11 +119,10 @@ class Trainner(nn.Module):
     def evaluate(self,test_loader):
         self.model.eval()
         with torch.no_grad():
-            test_loss = []
-            correct_pred = 0
-            total_pred = 0
-            total_na_pred = 0
-            na_correct_pred = 0
+            total_na_pred = None
+            total_na_label = None
+            total_nonNa_pred = None
+            total_nonNa_label = None
             for batch_data in test_loader:
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
@@ -131,20 +135,33 @@ class Trainner(nn.Module):
                 labels = labels[indices]
                 prediction = prediction[indices]
 
-                total_pred += prediction.shape[0]
-                correct_pred += torch.sum(prediction == labels).item()
-
                 na_indices = (labels == 0).nonzero().squeeze(-1)
-                na_pred = prediction[na_indices]
-                
-                na_correct_pred += torch.sum(na_pred == 0).item()
-                total_na_pred += na_pred.shape[0]
+                na_pred = F.one_hot(prediction[na_indices] == 0,2)
+                na_label = F,one_hot(labels[na_indices] == 0,2)
 
+                nonNa_indices = (labels != 0).nonzero().squeeze(-1)
+                nonNa_pred = F.one_hot(prediction[nonNa_indices],OUTPUT_NUM)
+                nonNa_label = F.one_hot(labels[nonNa_indices],OUTPUT_NUM)
 
-            # test_loss = sum(test_loss) / len(test_loss)
-            test_total_acc = correct_pred / total_pred
-            test_na_acc = na_correct_pred / total_na_pred
-            test_non_na_acc = (correct_pred - na_correct_pred) / (total_pred - total_na_pred)
+                total_na_pred = torch.cat([total_na_pred,na_pred],dim=0) if total_na_pred != None else na_pred
+                total_na_label = torch.cat([total_na_label,na_label],dim=0) if total_na_label != None else na_label
+                total_nonNa_pred = torch.cat([total_nonNa_pred,nonNa_pred],dim=0) if total_nonNa_pred != None else nonNa_pred
+                total_nonNa_label = torch.cat([total_nonNa_label,nonNa_label],dim=0) if total_nonNa_label != None else nonNa_label
 
-        return test_total_acc, test_na_acc, test_non_na_acc
+            def f1_metric(y_pred,y_true):
+                tp = (y_true * y_pred).sum().to(torch.float32)
+                tn = ((1-y_true) * (1-y_pred)).sum().to(torch.float32)
+                fp = ((1-y_true) * y_pred).sum().to(torch.float32)
+                fn = (y_true * (1 - y_pred)).sum().to(torch.float32)
+
+                epsilon = 1e-7
+                precision = tp / (tp + fp + epsilon)
+                recall = tp / (tp + fn + epsilon)
+                f1 = 2* (precision*recall) / (precision + recall + epsilon)
+
+                return precision.item(),recall.item(),f1.item()
+            nonNa_p,nonNa_r,nonNa_f1 = f1_metric(total_nonNa_pred,total_nonNa_label)
+            na_p,na_r,na_f1 = f1_metric(total_na_pred,total_na_label)
+
+        return {"nonNa_p":nonNa_p,"nonNa_r":nonNa_r,"nonNa_f1":nonNa_f1,"na_p":na_p,"na_r":na_r,"na_f1":na_f1}
 

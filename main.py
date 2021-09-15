@@ -4,7 +4,7 @@ from random import shuffle
 from collections import defaultdict
 from config import parse_config, print_config
 from trainner import Trainner
-from model import finalModel,debugModel
+from model import finalModel
 from data import graphDataset, build_vocab, collate_fn, rel2id
 from opt import OpenAIAdam
 from torch.utils.data import DataLoader

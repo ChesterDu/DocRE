@@ -52,7 +52,6 @@ class Trainner(nn.Module):
         return loss
 
     def train(self,train_loader,dev_loader):
-        self.model.init_params()
         print(self.model.parameters)
         self.total_steps = (self.epoch * len(train_loader) - 1) // self.num_acumulation + 1
         bar = tqdm.tqdm(total=self.total_steps)

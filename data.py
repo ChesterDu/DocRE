@@ -1,3 +1,4 @@
+from os import initgroups
 from fastNLP.core.vocabulary import Vocabulary
 import networkx as nx
 import json
@@ -8,6 +9,7 @@ import dgl
 import random
 import numpy as np
 import os
+from collections import defaultdict
 
 with open("../DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
@@ -209,7 +211,6 @@ class graphDataset(torch.utils.data.Dataset):
                     temp[men_start_pos:men_end_pos] = 1
                     node_span_mask.append(list(temp))
                     node_ner_id.append(ner2id[mention['type']])
-                    G.add_edge(ent_node_id,node_id)
                     edge_type_id.append(get_edge_idx('ENT-MENTION'))
                     
                     # Find AMR node alignment
@@ -261,10 +262,17 @@ class graphDataset(torch.utils.data.Dataset):
                     node_id += 1
                             
 
-                    
-            # node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,span_mask=node_span_mask,attr_id=node_attr_id)
-            node_data = dict(ner_id=node_ner_id,span_mask=node_span_mask,attr_id=node_attr_id)
-            edge_data = dict(edge_id=edge_type_id)
+            ## TODO: attach AMR graphs
+            for u in G.nodes():
+                count_dict = defaultdict(int)
+                for v in G.adj[u]:
+                    count_dict[G.edges[u,v]['edge_type']] += 1
+                for v in G.adj[u]:
+                    G.edges[u,v]['norm'] = 1 / count_dict[G.edges[u,v]['edge_type']]
+            
+            edge_norm = [G.edges[u,v]['norm'] for u,v in G.edges()]
+            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,span_mask=node_span_mask,attr_id=node_attr_id)
+            edge_data = dict(edge_id=edge_type_id,norm=edge_norm)
             self.samples[doc_id]['graphData'] = dict(nodes=[n for n in G.nodes()],edges=[[u, v] for u,v in G.edges()],ndata=node_data,edata=edge_data)
             self.samples[doc_id]['mentionId'] = list(span_node_index)
 
@@ -432,6 +440,7 @@ def collate_fn(batch_samples):
         dgl_g.ndata['span_mask'] = torch.BoolTensor(sample['graphData']['ndata']['span_mask'])
         dgl_g.ndata['attr_id'] = torch.LongTensor(sample['graphData']['ndata']['attr_id'])
         dgl_g.edata['edge_id'] = torch.LongTensor(sample['graphData']['edata']['edge_id'])
+        dgl_g.edata['norm'] = torch.LongTensor(sample['graphData']['edata']['norm'])
         assert(g.number_of_nodes()==dgl_g.num_nodes())
 
         batched_graph.append(dgl_g)

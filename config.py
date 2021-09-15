@@ -10,9 +10,11 @@ def parse_config():
     parser.add_argument('--max_token_len',default=530,type=int)
     parser.add_argument('--naPairs_num',default=25,type=int)
 
+    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat'])
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
     parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])
+    parser.add_argument('--fix_embed_weight',action='store_true')
 
     parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
 

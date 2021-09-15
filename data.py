@@ -7,6 +7,7 @@ import fastNLP
 import dgl
 import random
 import numpy as np
+import os
 
 with open("../DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
@@ -65,13 +66,13 @@ def build_vocab(train_data_pth,test_data_pth,dev_data_pth):
     return vocab
 
 class graphDataset(torch.utils.data.Dataset):
-    def __init__(self,config,data_pth,vocab,ignore_label_idx=-1,split='train'):
+    def __init__(self,config,processed_data_pth,raw_data_pth,vocab,ignore_label_idx=-1,split='train'):
         super(graphDataset,self).__init__()
 
-        with open(data_pth,'r') as fp:
-            self.samples = json.load(fp)
-        
         random.seed(config.seed)
+
+        with open(raw_data_pth,'r') as fp:
+            self.samples = json.load(fp)
         
         # self.create_amr_graph_alighments()
         # print("AMR Graph Alignments Completed!")
@@ -90,7 +91,13 @@ class graphDataset(torch.utils.data.Dataset):
         self.naPairs_num = config.naPairs_num
         # self.create_labels()
 
-        self.process_data()
+        if os.path.exists(processed_data_pth):
+            with open(processed_data_pth,'r') as fp:
+                self.samples = json.load(fp)
+        else:
+            self.process_data()
+            with open(processed_data_pth,'w') as fp:
+                json.dump(self.samples,fp)
         self.print_stat()
 
 
@@ -138,9 +145,9 @@ class graphDataset(torch.utils.data.Dataset):
             for sent_id,amr_graph in enumerate(amr_graphs):
                 alignments = amr_graph['alignments']
                 for u,rel,v in amr_graph['edges']:
-                    u_amrId = str(sent_id) + str(u)
-                    v_amrId = str(sent_id) + str(v)
-                    if u not in amr_id2node_id:
+                    u_amrId = str(sent_id) + "-" + str(u)
+                    v_amrId = str(sent_id) + "-" + str(v)
+                    if u_amrId not in amr_id2node_id:
                         G.add_node(node_id)
                         node_attr_id.append(attr2id['amr'])
                         node_ner_id.append(len(ner2id))  ## additional id for amr node
@@ -155,18 +162,18 @@ class graphDataset(torch.utils.data.Dataset):
 
                         amr_id2node_id[u_amrId] = node_id
                         node_id += 1
-                    if v not in amr_id2node_id:
+                    if v_amrId not in amr_id2node_id:
                         G.add_node(node_id)
                         node_attr_id.append(attr2id['amr'])
                         node_ner_id.append(len(ner2id))  ## additional id for amr node
                         temp = np.zeros(self.max_token_len)
                         try:
-                            alignments[str(v)]
+                            amr_span_id_lst = np.array(alignments[str(v)]) - 1 + sen_start_pos_lst[sent_id]    ## amr parsing results index start from 1
+                            temp[amr_span_id_lst] = 1
+                            node_span_mask.append(list(temp))
                         except:
-                            print(doc['sents'][sent_id])
-                        amr_span_id_lst = np.array(alignments[str(v)]) - 1 + sen_start_pos_lst[sent_id]    ## amr parsing results index start from 1
-                        temp[amr_span_id_lst] = 1
-                        node_span_mask.append(list(temp))
+                            node_span_mask.append([0] * self.max_token_len)
+
 
                         amr_id2node_id[v_amrId] = node_id
                         node_id += 1
@@ -211,10 +218,15 @@ class graphDataset(torch.utils.data.Dataset):
                     mention_pos = men_end_pos - 1
                     match_flag = False
                     for amr_node_id in amr_graph['nodes']:
-                        amr_id = str(mention['sent_id']) + amr_node_id
-                        amr_node_id = amr_id2node_id[amr_id]
+                        amr_id = str(mention['sent_id']) + "-" + amr_node_id
+                        try:
+                            amr_node_id = amr_id2node_id[amr_id]
+                        except:
+                            continue
                         span_mask = node_span_mask[amr_node_id]
                         amr_span_index = np.nonzero(np.array(span_mask) == 1)
+                        if np.sum(amr_span_index) == 0:
+                            continue
                         amr_span_start_pos,amr_span_end_pos = int(np.min(amr_span_index)),int(np.max(amr_span_index))
                         if (mention_pos >= amr_span_start_pos) and (mention_pos <= amr_span_end_pos):
                             G.add_edge(node_id,amr_node_id)
@@ -226,10 +238,15 @@ class graphDataset(torch.utils.data.Dataset):
                         min_dist = 100000000
                         min_dist_amr_node = -1
                         for amr_node_id in amr_graph['nodes']:
-                            amr_id = str(mention['sent_id']) + amr_node_id
-                            amr_node_id = amr_id2node_id[amr_id]
+                            amr_id = str(mention['sent_id']) + "-" + amr_node_id
+                            try:
+                                amr_node_id = amr_id2node_id[amr_id]
+                            except:
+                                continue
                             span_mask = node_span_mask[amr_node_id]
                             amr_span_index = np.nonzero(np.array(span_mask) == 1)
+                            if np.sum(amr_span_index) == 0:
+                                continue
                             amr_span_start_pos,amr_span_end_pos = int(np.min(amr_span_index)),int(np.max(amr_span_index))
 
                             dist = abs(mention_pos - amr_span_start_pos) + abs(mention_pos - amr_span_end_pos)

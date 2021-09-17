@@ -3,6 +3,7 @@ import argparse
 
 def parse_config():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--debug',action='store_true')
     parser.add_argument('--seed',default=20,type=int)
     parser.add_argument('--epoch',default=20,type=int)
     parser.add_argument('--train_batch_size',default=4,type=int)
@@ -48,7 +49,9 @@ def parse_config():
     parser.add_argument('--log_pth',default='../logs/',type=str)
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
 
-    config = parser.parse_args(args=[])
+    config = parser.parse_args()
+    # config = parser.parse_args(args=[])
+
 
     return config
 

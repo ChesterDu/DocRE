@@ -10,6 +10,7 @@ import random
 import numpy as np
 import os
 from collections import defaultdict
+import tqdm
 
 with open("../DocRED/rel2id.json","r") as fp:
     rel2id = json.load(fp)
@@ -75,6 +76,8 @@ class graphDataset(torch.utils.data.Dataset):
 
         with open(raw_data_pth,'r') as fp:
             self.samples = json.load(fp)
+            if config.debug:
+                self.samples = self.samples[:20]
         
         # self.create_amr_graph_alighments()
         # print("AMR Graph Alignments Completed!")
@@ -93,13 +96,14 @@ class graphDataset(torch.utils.data.Dataset):
         self.naPairs_num = config.naPairs_num
         # self.create_labels()
 
-        if os.path.exists(processed_data_pth):
-            with open(processed_data_pth,'r') as fp:
-                self.samples = json.load(fp)
-        else:
-            self.process_data()
-            with open(processed_data_pth,'w') as fp:
-                json.dump(self.samples,fp)
+        # if os.path.exists(processed_data_pth):
+        #     with open(processed_data_pth,'r') as fp:
+        #         self.samples = json.load(fp)
+        # else:
+        #     self.process_data()
+        #     with open(processed_data_pth,'w') as fp:
+        #         json.dump(self.samples,fp)
+        self.process_data()
         self.print_stat()
 
 
@@ -114,6 +118,8 @@ class graphDataset(torch.utils.data.Dataset):
         print("Split: {} || Sample Num: {} || Max Token Num: {} || Max Ent Num: {} || Max Pair Num: {}".format(self.split,len(self.samples),self.max_token_len,self.max_ent_num,self.max_pair_num))
 
     def process_data(self):
+        bar = tqdm.tqdm(total=len(self.samples))
+        bar.update(0)
         for doc_id,doc in enumerate(self.samples):
             ## convert word to ids
             word_id = []
@@ -136,7 +142,7 @@ class graphDataset(torch.utils.data.Dataset):
             node_span_pos = []
             node_span_mask = []
             node_attr_id = []
-            edge_type_id = []
+            # edge_type_id = []
             node_id = 0
             entity2node = []
             entity2mentino_nodes=[]
@@ -158,8 +164,13 @@ class graphDataset(torch.utils.data.Dataset):
                             amr_span_id_lst = np.array(alignments[str(u)]) - 1 + sen_start_pos_lst[sent_id]    ## amr parsing results index start from 1
                             temp[amr_span_id_lst] = 1
                             node_span_mask.append(list(temp))
-                        except:
+                            if amr_span_id_lst.ndim == 0:
+                                node_span_pos.append([int(amr_span_id_lst)])
+                            else:
+                                node_span_pos.append([int(item) for item in list(amr_span_id_lst)])
+                        except KeyError:
                             node_span_mask.append([0] * self.max_token_len)
+                            node_span_pos.append([])
                         
 
                         amr_id2node_id[u_amrId] = node_id
@@ -173,8 +184,13 @@ class graphDataset(torch.utils.data.Dataset):
                             amr_span_id_lst = np.array(alignments[str(v)]) - 1 + sen_start_pos_lst[sent_id]    ## amr parsing results index start from 1
                             temp[amr_span_id_lst] = 1
                             node_span_mask.append(list(temp))
-                        except:
+                            if amr_span_id_lst.ndim == 0:
+                                node_span_pos.append([int(amr_span_id_lst)])
+                            else:
+                                node_span_pos.append([int(item) for item in list(amr_span_id_lst)])
+                        except KeyError:
                             node_span_mask.append([0] * self.max_token_len)
+                            node_span_pos.append([])
 
 
                         amr_id2node_id[v_amrId] = node_id
@@ -182,11 +198,11 @@ class graphDataset(torch.utils.data.Dataset):
 
                     if rel[1:].startswith("ARG") and rel[1:].endswith("-of"):
                         G.add_edge(amr_id2node_id[v_amrId],amr_id2node_id[u_amrId],edge_type=get_edge_idx(rel[1:5]))
-                        edge_type_id.append(get_edge_idx(rel[1:5]))
+                        # edge_type_id.append(get_edge_idx(rel[1:5]))
                     
                     else:
                         G.add_edge(amr_id2node_id[u_amrId],amr_id2node_id[v_amrId],edge_type=get_edge_idx(rel[1:]))
-                        edge_type_id.append(get_edge_idx(rel[1:]))
+                        # edge_type_id.append(get_edge_idx(rel[1:]))
 
             for ent_id, mentions in enumerate(doc['vertexSet']):
                 entity2node.append(node_id)
@@ -194,7 +210,7 @@ class graphDataset(torch.utils.data.Dataset):
                 ent_node_id = node_id
                 G.add_node(node_id)
                 node_attr_id.append(attr2id['entity'])
-                node_span_pos.append([-1,-1])
+                node_span_pos.append([])
                 node_span_mask.append([0] * self.max_token_len)
                 node_ner_id.append(ner2id[mentions[0]['type']])
                 node_id += 1
@@ -206,12 +222,12 @@ class graphDataset(torch.utils.data.Dataset):
                     span_node_index[men_start_pos:men_end_pos] = node_id
                     G.add_node(node_id)
                     node_attr_id.append(attr2id['mention'])
-                    node_span_pos.append([men_start_pos,men_end_pos])
+                    node_span_pos.append(list(range(men_start_pos,men_end_pos)))
                     temp = np.zeros(self.max_token_len)
                     temp[men_start_pos:men_end_pos] = 1
                     node_span_mask.append(list(temp))
                     node_ner_id.append(ner2id[mention['type']])
-                    edge_type_id.append(get_edge_idx('ENT-MENTION'))
+                    # edge_type_id.append(get_edge_idx('ENT-MENTION'))
                     G.add_edge(ent_node_id,node_id,edge_type=get_edge_idx('ENT-MENTION'))
                     
                     # Find AMR node alignment
@@ -232,7 +248,7 @@ class graphDataset(torch.utils.data.Dataset):
                         amr_span_start_pos,amr_span_end_pos = int(np.min(amr_span_index)),int(np.max(amr_span_index))
                         if (mention_pos >= amr_span_start_pos) and (mention_pos <= amr_span_end_pos):
                             G.add_edge(node_id,amr_node_id,edge_type=get_edge_idx('MENTION-AMR'))
-                            edge_type_id.append(get_edge_idx('MENTION-AMR'))
+                            # edge_type_id.append(get_edge_idx('MENTION-AMR'))
                             match_flag = True
                             break
                     
@@ -258,7 +274,7 @@ class graphDataset(torch.utils.data.Dataset):
                         
                         if min_dist_amr_node != -1:
                             G.add_edge(node_id,min_dist_amr_node,edge_type=get_edge_idx('MENTION-NEAREST'))
-                            edge_type_id.append(get_edge_idx('MENTION-NEAREST'))
+                            # edge_type_id.append(get_edge_idx('MENTION-NEAREST'))
 
                     node_id += 1
                             
@@ -272,8 +288,9 @@ class graphDataset(torch.utils.data.Dataset):
                     G.edges[u,v]['norm'] = 1 / count_dict[G.edges[u,v]['edge_type']]
             
             edge_norm = [G.edges[u,v]['norm'] for u,v in G.edges()]
-            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,span_mask=node_span_mask,attr_id=node_attr_id)
-            edge_data = dict(edge_id=edge_type_id,norm=edge_norm)
+            edge_type = [G.edges[u,v]['edge_type'] for u,v in G.edges()]
+            node_data = dict(ner_id=node_ner_id,span_pos=node_span_pos,attr_id=node_attr_id)
+            edge_data = dict(edge_id=edge_type,norm=edge_norm)
             self.samples[doc_id]['graphData'] = dict(nodes=[n for n in G.nodes()],edges=[[u, v] for u,v in G.edges()],ndata=node_data,edata=edge_data)
             self.samples[doc_id]['mentionId'] = list(span_node_index)
 
@@ -307,6 +324,8 @@ class graphDataset(torch.utils.data.Dataset):
             self.samples[doc_id]['naPairs_num'] = self.naPairs_num
             if self.split in ['test','dev']:
                 self.samples[doc_id]['naPairs_num'] = len(naPairs)
+            
+            bar.update(1)
 
 
 
@@ -317,6 +336,7 @@ def collate_fn(batch_samples):
     batched_label = []
     batched_entPair = []
 
+    max_span_len = max([max([len(item) for item in sample['graphData']['ndata']['span_pos']]) for sample in batch_samples])
     for sample in batch_samples:
         batched_token_id.append(sample['tokenIds'])
         batched_mention_id.append(sample['mentionId'])
@@ -326,11 +346,21 @@ def collate_fn(batch_samples):
         g.add_edges_from(sample['graphData']['edges'])
         dgl_g = dgl.from_networkx(g)
         dgl_g.ndata['ner_id'] = torch.LongTensor(sample['graphData']['ndata']['ner_id'])
-        dgl_g.ndata['span_pos'] = torch.LongTensor(sample['graphData']['ndata']['span_pos'])
-        dgl_g.ndata['span_mask'] = torch.BoolTensor(sample['graphData']['ndata']['span_mask'])
+
+        node_span_mask = []
+        node_span_pos = []
+        for span_pos_lst in sample['graphData']['ndata']['span_pos']:
+            span_mask = [1] * len(span_pos_lst) + [0] * (max_span_len - len(span_pos_lst))
+            span_pos_lst = span_pos_lst + [0] * (max_span_len - len(span_pos_lst))
+            node_span_mask.append(span_mask)
+            node_span_pos.append(span_pos_lst)
+        dgl_g.ndata['span_pos'] = torch.LongTensor(node_span_pos)
+        dgl_g.ndata['span_mask'] = torch.BoolTensor(node_span_mask)
+
         dgl_g.ndata['attr_id'] = torch.LongTensor(sample['graphData']['ndata']['attr_id'])
         dgl_g.edata['edge_id'] = torch.LongTensor(sample['graphData']['edata']['edge_id'])
         dgl_g.edata['norm'] = torch.LongTensor(sample['graphData']['edata']['norm'])
+        # print(dgl_g.ndata['span_pos'].shape,dgl_g.ndata['span_mask'].shape,dgl_g.ndata['attr_id'].shape)
         assert(g.number_of_nodes()==dgl_g.num_nodes())
 
         batched_graph.append(dgl_g)

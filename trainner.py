@@ -136,8 +136,8 @@ class Trainner(nn.Module):
                 prediction = prediction[indices]
 
                 na_indices = (labels == 0).nonzero().squeeze(-1)
-                na_pred = F.one_hot(prediction[na_indices] == 0,2)
-                na_label = F,one_hot(labels[na_indices] == 0,2)
+                na_pred = F.one_hot((prediction[na_indices] == 0).to(torch.int64),2)
+                na_label = F.one_hot((labels[na_indices] == 0).to(torch.int64),2)
 
                 nonNa_indices = (labels != 0).nonzero().squeeze(-1)
                 nonNa_pred = F.one_hot(prediction[nonNa_indices],OUTPUT_NUM)

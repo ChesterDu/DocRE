@@ -23,13 +23,16 @@ cudnn.deterministic = True
 
 ## Make dataloader
 train_data_pth = "../DocRED/data/train_amr_annotated_full.json"
+train_processed_data_pth = "../DocRED/data/train_amr_annotated_full_processed.json"
 test_data_pth = "../DocRED/data/test_amr_annotated_full.json"
+test_processed_data_pth = "../DocRED/data/test_amr_annotated_full_processed.json"
 dev_data_pth = "../DocRED/data/dev_amr_annotated_full.json"
+dev_processed_data_pth = "../DocRED/data/dev_amr_annotated_full_processed.json"
 vocab = build_vocab(train_data_pth,test_data_pth,dev_data_pth)
 
-train_dataset = graphDataset(config,train_data_pth,vocab,ignore_label_idx=-1,split='train')
+train_dataset = graphDataset(config,train_processed_data_pth,train_data_pth,vocab,ignore_label_idx=-1,split='train')
 # test_dataset = graphDataset(test_data_pth,vocab,seed=config.seed,max_token_len=config.max_token_len,ignore_label_idx=-1,split='test')
-dev_dataset = graphDataset(config,dev_data_pth,vocab,ignore_label_idx=-1,split='dev')
+dev_dataset = graphDataset(config,dev_processed_data_pth,dev_data_pth,vocab,ignore_label_idx=-1,split='dev')
 
 train_loader = DataLoader(train_dataset, num_workers=2, batch_size=config.train_batch_size, shuffle=True, collate_fn = collate_fn)
 # test_loader = DataLoader(test_dataset, num_workers=2, batch_size=config.eval_batch_size, shuffle=True, collate_fn= collate_fn)

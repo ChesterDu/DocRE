@@ -54,7 +54,7 @@ class finalModel(nn.Module):
         self.node_in_dim = self.embed.embedding_dim
         if config.use_ner_feature:
             self.node_in_dim += config.node_ner_emb_dim
-            self.nerEmb = nn.Embedding(NER_NUM,config.node_ner_emb_dim)
+            self.nerEmb = nn.Embedding(NER_NUM + 1,config.node_ner_emb_dim)
             for p in self.nerEmb.parameters():
                 if p.dim() >= 2:
                     torch.nn.init.xavier_normal_(p)
@@ -113,11 +113,17 @@ class finalModel(nn.Module):
         for i,g in enumerate(batch_data['graph']):    
           
             if self.config.node_span_pool_method == 'avg':
-                node_span_mask = g.ndata['span_mask'] # [node_num,doc_len]
-                node_span_feature = node_span_mask.unsqueeze(-1) * (token_feature[i].unsqueeze(0).expand(g.num_nodes(),-1,-1)) # [node_num, doc_len, feature_dim]
-                node_span_feature = node_span_feature.sum(1) #[node_num,feature_dim]
+                node_span_mask = g.ndata['span_mask'] # [node_num,max_span_len]
+                node_span_pos = g.ndata['span_pos'] # [node_num,max_span_len]
+                node_span_feature = token_feature[i][node_span_pos] # [node_num,max_span_len,feature_dim]
+                node_span_feature = node_span_feature * node_span_mask.unsqueeze(-1)
+                node_span_feature = node_span_feature.sum(1)
                 node_span_len = node_span_mask.sum(1,keepdim=True)
-                node_span_feature = torch.div(node_span_feature, node_span_len + 1e-6) # avoid divide zero
+                node_span_feature = torch.div(node_span_feature, node_span_len + 1e-7)
+                # node_span_feature = node_span_mask.unsqueeze(-1) * (token_feature[i].unsqueeze(0).expand(g.num_nodes(),-1,-1)) # [node_num, doc_len, feature_dim]
+                # node_span_feature = node_span_feature.sum(1) #[node_num,feature_dim]
+                # node_span_len = node_span_mask.sum(1,keepdim=True)
+                # node_span_feature = torch.div(node_span_feature, node_span_len + 1e-6) # avoid divide zero
             
             node_in_feature = node_span_feature     # [bsz,node_num,node_span_feature_dim]
 

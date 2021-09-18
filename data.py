@@ -93,7 +93,7 @@ class graphDataset(torch.utils.data.Dataset):
         self.max_pair_num = max([len(sample['labels']) for sample in self.samples])
         self.ignore_label_idx = ignore_label_idx
 
-        self.naPairs_num = config.naPairs_num
+        self.naPairs_alpha = config.naPairs_alpha
         # self.create_labels()
 
         # if os.path.exists(processed_data_pth):
@@ -295,13 +295,13 @@ class graphDataset(torch.utils.data.Dataset):
             self.samples[doc_id]['mentionId'] = list(span_node_index)
 
             ## create label, head and tail entities
-            labels = []
-            entPairs = []
+            h_t_pair2label = {}
             for i,label_data in enumerate(doc['labels']):
                 pair = [entity2node[label_data['h']],entity2node[label_data['t']]]
-                if pair not in entPairs:
-                    labels.append(rel2id[label_data['r']])
-                    entPairs.append(pair)
+                if pair not in h_t_pair2label:
+                    h_t_pair2label[pair] = [rel2id[label_data['r']]]
+                else:
+                    h_t_pair2label[pair].append(rel2id[label_data['r']])
             
             entNum = len(doc['vertexSet'])
             naPairs = []
@@ -310,20 +310,20 @@ class graphDataset(torch.utils.data.Dataset):
                     if i==j:
                         continue
                     pair = [entity2node[i],entity2node[j]]
-                    if pair not in entPairs:
+                    if pair not in h_t_pair2label:
                         naPairs.append(pair)
                         # labels.append(0)
+            random.shuffle(naPairs)
             
             # labels += [-1] * (self.max_pair_num - len(labels))
             # entPairs += naPairs
             # entPairs += [[0,0] for i in range(self.max_pair_num-len(entPairs))]
 
-            self.samples[doc_id]['entLabels'] = labels
-            self.samples[doc_id]['entPairs'] = entPairs
+            self.samples[doc_id]['posPairs2label'] = h_t_pair2label
             self.samples[doc_id]['naPairs'] = naPairs
-            self.samples[doc_id]['naPairs_num'] = self.naPairs_num
+            self.samples[doc_id]['naPairs_num'] = max([10,self.naPairs_alpha * len(h_t_pair2label)])
             if self.split in ['test','dev']:
-                self.samples[doc_id]['naPairs_num'] = len(naPairs)
+                self.samples[doc_id]['naPairs_num'] = 0.0   # use all pair
             
             bar.update(1)
 
@@ -334,6 +334,7 @@ def collate_fn(batch_samples):
     batched_mention_id = []
     batched_graph = []
     batched_label = []
+    batched_multi_label = []
     batched_entPair = []
 
     max_span_len = max([max([len(item) for item in sample['graphData']['ndata']['span_pos']]) for sample in batch_samples])
@@ -365,23 +366,50 @@ def collate_fn(batch_samples):
 
         batched_graph.append(dgl_g)
         
-        random.shuffle(sample['naPairs'])
-        naPairs = sample['naPairs'][:sample['naPairs_num']]
-        pairs = sample['entPairs'] + naPairs
+        if sample['naPairs_num'] > 0:
+            naPairs_num = min([len(sample['naPairs']), sample['naPairs_num']])
+        else:
+            naPairs_num = len(sample['naPairs'])
+        naPairs = sample['naPairs'][:naPairs_num]
+        posPairs = list(sample['posPairs2label'].keys())
+        pairs = posPairs + naPairs
+
+        relNum = len(rel2id)
+        multi_labels = []
+        single_labels = []
+        for i,pair in enumerate(posPairs):
+            multi_label = [0] * relNum
+            labels = sample['posPairs2label'][pair]
+            for label in labels:
+                multi_label[label] = 1
+            multi_labels.append(multi_label)
+            single_labels.append(random.choice(labels))
+        
+        for j,pair in enumerate(naPairs):
+            multi_label = [0] * relNum
+            multi_label[0] = 1
+            multi_labels.append(multi_label)
+            single_labels.append(0)
+
         labels = sample['entLabels'] + [0] * len(naPairs)
 
-        batched_label.append(labels)
+        batched_label.append(single_labels)
+        batched_multi_label.append(multi_labels)
         batched_entPair.append(pairs)
     
     max_pair_num = max([len(labels) for labels in batched_label])
     batched_label = [item + [-1] * (max_pair_num - len(item)) for item in batched_label]
+    pad_multi_label = [0] * relNum
+    batched_multi_label = [item + [pad_multi_label for i in range(max_pair_num - len(item))] for item in batched_multi_label]
     batched_entPair = [item + [[0,0] for i in range(max_pair_num - len(item))] for item in batched_entPair]
     
     batched_token_id = torch.LongTensor(batched_token_id)
     batched_mention_id = torch.LongTensor(batched_mention_id)
     batched_label = torch.LongTensor(batched_label)
+    batched_multi_label = torch.LongTensor(batched_multi_label)
     batched_entPair = torch.LongTensor(batched_entPair)
+    batched_label_mask = batched_label != -1
 
-    return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,ent_pair=batched_entPair)
+    return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,multi_label=batched_multi_label,label_mask=batched_label_mask,ent_pair=batched_entPair)
 
 

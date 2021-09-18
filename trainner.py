@@ -67,8 +67,11 @@ class Trainner(nn.Module):
             for batch_data in train_loader:
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
-                labels = batch_data['label'].to(self.device).reshape(-1)
-                loss = self.criterion(logits,labels)
+                multi_labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1])
+                loss = self.criterion(logits,multi_labels) # reduction = none, shape: [bsz * h_t_pair_num]
+                label_mask = batch_data['label_mask'].to(self.device).reshape(-1)
+                loss = loss * label_mask
+                loss = loss.sum() / label_mask.sum()
 
                 # na_indices = (labels == 0).nonzero().squeeze(-1)
                 # ignore_indices = (labels == -1).nonzero().squeeze(-1)

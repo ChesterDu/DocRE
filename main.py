@@ -79,9 +79,11 @@ if config.use_loss_weight:
         label_weight_lst.append(1 / label_count[k])
 
     label_weight = torch.FloatTensor(label_weight_lst).to(config.device)
-    criterion = torch.nn.CrossEntropyLoss(weight=label_weight,ignore_index=-1)
+    # criterion = torch.nn.CrossEntropyLoss(weight=label_weight,ignore_index=-1)
+    criterion = torch.nn.BCEWithLogitsLoss(weight=label_weight,reduction='none')
 else:
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
+    # criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
+    criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
 
 ## Make Trainner
 trainner = Trainner(config,model,optimizer,criterion)

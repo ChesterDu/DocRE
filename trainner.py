@@ -72,8 +72,8 @@ class Trainner(nn.Module):
         self.lr = config.lr
         self.device = config.device
 
-        self.fact_in_train = gen_train_facts("../DocRED/train_annotated.json")
-        truth = json.load(open("../DocRED/dev.json",'r'))
+        self.fact_in_train = gen_train_facts("../DocRED/data/train_annotated.json")
+        truth = json.load(open("../DocRED/data/dev.json",'r'))
         self.std = {}
         self.titleset = set([])
 
@@ -141,7 +141,7 @@ class Trainner(nn.Module):
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            results = official_evaluate(dev_loader)
+            results = self.official_evaluate(dev_loader)
             print("Eval Results Epoch: {}".format(self.epoch_count))
             for metric in results:
                 fitlog.add_metric({"dev":metric},step=self.step_count,epoch=self.epoch_count)
@@ -176,8 +176,8 @@ class Trainner(nn.Module):
                     assert(prediction.shape[0] == len(orig_pairs))
 
                     for i,[h_idx,t_idx] in enumerate(orig_pairs):
-                        for r in range(prediction.shape[0]):
-                            if prediction[r] == 1:
+                        for r in range(prediction.shape[1]):
+                            if prediction[i][r] == 1:
                                 tmp.append({'title':title, 'h_idx':h_idx, 't_idx':t_idx, 'r':r})
 
 

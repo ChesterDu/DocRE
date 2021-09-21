@@ -144,7 +144,7 @@ class graphDataset(torch.utils.data.Dataset):
             node_attr_id = []
             # edge_type_id = []
             node_id = 0
-            entity2node = []
+            entity2node = {}
             entity2mentino_nodes=[]
 
             ## TODO: attach AMR graphs
@@ -205,7 +205,7 @@ class graphDataset(torch.utils.data.Dataset):
                         # edge_type_id.append(get_edge_idx(rel[1:]))
 
             for ent_id, mentions in enumerate(doc['vertexSet']):
-                entity2node.append(node_id)
+                entity2node[ent_id] = node_id
                 entity2mentino_nodes.append([])
                 ent_node_id = node_id
                 G.add_node(node_id)
@@ -314,6 +314,9 @@ class graphDataset(torch.utils.data.Dataset):
                         naPairs.append(pair)
                         # labels.append(0)
             random.shuffle(naPairs)
+
+            node2entity = {entity2node[k]:k for k in entity2node.keys()}
+            orig_h_t_pairs = [[node2entity[item[0]],node2entity[item[1]]] for item in list(h_t_pair2label.keys()) + naPairs]
             
             # labels += [-1] * (self.max_pair_num - len(labels))
             # entPairs += naPairs
@@ -321,6 +324,7 @@ class graphDataset(torch.utils.data.Dataset):
 
             self.samples[doc_id]['posPairs2label'] = h_t_pair2label
             self.samples[doc_id]['naPairs'] = naPairs
+            self.samples[doc_id]['origPairs'] = orig_h_t_pairs
             self.samples[doc_id]['naPairs_num'] = int(max([10,self.naPairs_alpha * len(h_t_pair2label)]))
             if self.split in ['test','dev']:
                 self.samples[doc_id]['naPairs_num'] = 0.0   # use all pair
@@ -336,11 +340,15 @@ def collate_fn(batch_samples):
     batched_label = []
     batched_multi_label = []
     batched_entPair = []
+    batched_origPair = []
+    batched_titles = []
 
     max_span_len = max([max([len(item) for item in sample['graphData']['ndata']['span_pos']]) for sample in batch_samples])
     for sample in batch_samples:
         batched_token_id.append(sample['tokenIds'])
         batched_mention_id.append(sample['mentionId'])
+        batched_origPair.append(sample['origPairs'])
+        batched_titles.append(sample['title'])
 
         g = nx.DiGraph()
         g.add_nodes_from(sample['graphData']['nodes'])
@@ -370,8 +378,8 @@ def collate_fn(batch_samples):
             naPairs_num = min([len(sample['naPairs']), sample['naPairs_num']])
         else:
             naPairs_num = len(sample['naPairs'])
-        naPairs = [list(item) for item in sample['naPairs'][:naPairs_num]]
-        posPairs = [list(item) for item in sample['posPairs2label'].keys()]
+        naPairs = sample['naPairs'][:naPairs_num]
+        posPairs = list(sample['posPairs2label'].keys())
         pairs = posPairs + naPairs
 
         relNum = len(rel2id)
@@ -379,7 +387,7 @@ def collate_fn(batch_samples):
         single_labels = []
         for i,pair in enumerate(posPairs):
             multi_label = [0] * relNum
-            labels = sample['posPairs2label'][(pair[0],pair[1])]
+            labels = sample['posPairs2label'][pair]
             for label in labels:
                 multi_label[label] = 1
             multi_labels.append(multi_label)
@@ -408,6 +416,6 @@ def collate_fn(batch_samples):
     batched_entPair = torch.LongTensor(batched_entPair)
     batched_label_mask = batched_label != -1
 
-    return dict(token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,multi_label=batched_multi_label,label_mask=batched_label_mask,ent_pair=batched_entPair)
+    return dict(title=batched_titles,token_id=batched_token_id,mention_id=batched_mention_id,graph=batched_graph,label=batched_label,multi_label=batched_multi_label,label_mask=batched_label_mask,ent_pair=batched_entPair,orig_pair=batched_origPair)
 
 

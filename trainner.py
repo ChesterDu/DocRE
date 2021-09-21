@@ -8,6 +8,19 @@ import tqdm
 import torch.nn.functional as F
 from model import OUTPUT_NUM
 
+def f1_metric(y_pred,y_true):
+    tp = (y_true * y_pred).sum().to(torch.float32)
+    tn = ((1-y_true) * (1-y_pred)).sum().to(torch.float32)
+    fp = ((1-y_true) * y_pred).sum().to(torch.float32)
+    fn = (y_true * (1 - y_pred)).sum().to(torch.float32)
+
+#     epsilon = 1e-7
+#     precision = tp / (tp + fp + epsilon)
+#     recall = tp / (tp + fn + epsilon)
+#     f1 = 2* (precision*recall) / (precision + recall + epsilon)
+
+    return tp.item(),tn.item(),fp.item(),fn.item()
+
 
 class Trainner(nn.Module):
     def __init__(self,config,model,optimizer,criterion):
@@ -34,9 +47,14 @@ class Trainner(nn.Module):
 
         self.lr = config.lr
         self.device = config.device
-
-        fitlog.set_log_dir(self.log_pth)
+        
+        if config.debug:
+            fitlog.set_log_dir("../debug_logs")
+        else:
+            fitlog.set_log_dir(self.log_pth)
         fitlog.add_hyper(config)
+        
+        self.theta = config.theta
     
     
     def forward_step(self,batch_data):
@@ -67,10 +85,10 @@ class Trainner(nn.Module):
             for batch_data in train_loader:
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
-                multi_labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1])
+                multi_labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1]).to(torch.float)
                 loss = self.criterion(logits,multi_labels) # reduction = none, shape: [bsz * h_t_pair_num]
                 label_mask = batch_data['label_mask'].to(self.device).reshape(-1)
-                loss = loss * label_mask
+                loss = loss.sum(dim=-1) * label_mask
                 loss = loss.sum() / label_mask.sum()
 
                 # na_indices = (labels == 0).nonzero().squeeze(-1)
@@ -107,18 +125,46 @@ class Trainner(nn.Module):
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            results = self.evaluate(dev_loader)
-            print("Eval Results Epoch: {} || Step:{}/{} || NA Acc: {} || NA F1: {} || Non NA Acc: {} || Non NA F1: {}".format(self.epoch_count,self.step_count,self.total_steps,results['na_p'],results['na_f1'],results['nonNa_p'],results['nonNa_f1']))
-            fitlog.add_metric({"dev":{"NA Acc":results['na_p']}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"NA Recall":results['na_r']}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"NA F1":results['na_f1']}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Non NA Acc":results['nonNa_p']}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Non NA Recall":results['nonNa_r']}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Non NA F1":results['nonNa_f1']}}, step=self.step_count,epoch=self.epoch_count)
+            p,r,f1 = self.evaluate_multi(dev_loader)
+            print("Eval Results Epoch: {} || Step:{}/{} || Precision: {} || Recall: {} || F1: {}".format(self.epoch_count,self.step_count,self.total_steps,p,r,f1))
+            fitlog.add_metric({"dev":{"Precision":p}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"Recall":r}}, step=self.step_count,epoch=self.epoch_count)
+            fitlog.add_metric({"dev":{"F1":f1}}, step=self.step_count,epoch=self.epoch_count)
             # fitlog.add_metric({"dev":{"Loss":test_loss}},step=self.step_count,epoch=self.epoch_count)
             self.epoch_count += 1
     
 
+    def evaluate_multi(self,test_loader):
+        self.model.eval()
+        with torch.no_grad():
+            total_tp = 0
+            total_tn = 0
+            total_fp = 0
+            total_fn = 0
+            for batch_data in test_loader:
+                logits = self.model(batch_data)
+                logits = logits.reshape(-1,logits.shape[-1])
+                labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1]).to(torch.float)
+                predections_re = (torch.sigmoid(logits) > self.theta).to(torch.float)
+                
+                indices = (labels != -1).nonzero().squeeze(-1)
+                labels = labels[indices]
+                predections_re = predections_re[indices]
+                
+                tp,tn,fp,fn = f1_metric(predections_re,labels)
+                total_tp += tp
+                total_tn += tn
+                total_fp += fp
+                total_fn += fn
+
+             
+            epsilon = 1e-7
+            p = total_tp / (total_tp + total_fp + epsilon)
+            r = total_tp / (total_tp + total_fn + epsilon)
+            f1 = 2* (p*r) / (p + r + epsilon)
+        return p,r,f1
+
+        
     def evaluate(self,test_loader):
         self.model.eval()
         with torch.no_grad():
@@ -129,7 +175,7 @@ class Trainner(nn.Module):
             for batch_data in test_loader:
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
-                labels = batch_data['label'].to(self.device).reshape(-1)
+                labels = batch_data['label'].to(self.device).reshape(-1).to(torch.float)
                 # loss = self.criterion(logits,labels)
                 # test_loss.append(loss.item())
 

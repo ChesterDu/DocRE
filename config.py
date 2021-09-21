@@ -9,7 +9,7 @@ def parse_config():
     parser.add_argument('--train_batch_size',default=4,type=int)
     parser.add_argument('--eval_batch_size',default=8,type=int)
     parser.add_argument('--max_token_len',default=530,type=int)
-    parser.add_argument('--naPairs_num',default=25,type=int)
+    parser.add_argument('--naPairs_alpha',default=2.0,type=float)
 
     parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat'])
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
@@ -38,6 +38,7 @@ def parse_config():
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
 
 
+    parser.add_argument('--theta',default=0.8,type=float)
     parser.add_argument('--lr',default=1e-3,type=float)
     parser.add_argument('--clip',default=1.0,type=float)
     parser.add_argument('--num_acumulation',default=1,type=int)
@@ -50,7 +51,7 @@ def parse_config():
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
 
     config = parser.parse_args()
-    # config = parser.parse_args(args=[])
+#     config = parser.parse_args(args=[])
 
 
     return config

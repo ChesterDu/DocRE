@@ -297,7 +297,7 @@ class graphDataset(torch.utils.data.Dataset):
             ## create label, head and tail entities
             h_t_pair2label = {}
             for i,label_data in enumerate(doc['labels']):
-                pair = [entity2node[label_data['h']],entity2node[label_data['t']]]
+                pair = (entity2node[label_data['h']],entity2node[label_data['t']])
                 if pair not in h_t_pair2label:
                     h_t_pair2label[pair] = [rel2id[label_data['r']]]
                 else:
@@ -309,7 +309,7 @@ class graphDataset(torch.utils.data.Dataset):
                 for j in range(entNum):
                     if i==j:
                         continue
-                    pair = [entity2node[i],entity2node[j]]
+                    pair = (entity2node[i],entity2node[j])
                     if pair not in h_t_pair2label:
                         naPairs.append(pair)
                         # labels.append(0)
@@ -321,7 +321,7 @@ class graphDataset(torch.utils.data.Dataset):
 
             self.samples[doc_id]['posPairs2label'] = h_t_pair2label
             self.samples[doc_id]['naPairs'] = naPairs
-            self.samples[doc_id]['naPairs_num'] = max([10,self.naPairs_alpha * len(h_t_pair2label)])
+            self.samples[doc_id]['naPairs_num'] = int(max([10,self.naPairs_alpha * len(h_t_pair2label)]))
             if self.split in ['test','dev']:
                 self.samples[doc_id]['naPairs_num'] = 0.0   # use all pair
             
@@ -370,8 +370,8 @@ def collate_fn(batch_samples):
             naPairs_num = min([len(sample['naPairs']), sample['naPairs_num']])
         else:
             naPairs_num = len(sample['naPairs'])
-        naPairs = sample['naPairs'][:naPairs_num]
-        posPairs = list(sample['posPairs2label'].keys())
+        naPairs = [list(item) for item in sample['naPairs'][:naPairs_num]]
+        posPairs = [list(item) for item in sample['posPairs2label'].keys()]
         pairs = posPairs + naPairs
 
         relNum = len(rel2id)
@@ -379,7 +379,7 @@ def collate_fn(batch_samples):
         single_labels = []
         for i,pair in enumerate(posPairs):
             multi_label = [0] * relNum
-            labels = sample['posPairs2label'][pair]
+            labels = sample['posPairs2label'][(pair[0],pair[1])]
             for label in labels:
                 multi_label[label] = 1
             multi_labels.append(multi_label)
@@ -390,8 +390,6 @@ def collate_fn(batch_samples):
             multi_label[0] = 1
             multi_labels.append(multi_label)
             single_labels.append(0)
-
-        labels = sample['entLabels'] + [0] * len(naPairs)
 
         batched_label.append(single_labels)
         batched_multi_label.append(multi_labels)

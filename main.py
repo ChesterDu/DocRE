@@ -14,7 +14,7 @@ import torch
 
 
 config = parse_config()
-print_config(config)
+# print_config(config)
 
 
 random.seed(config.seed)

@@ -1,12 +1,12 @@
 from dgl.batch import batch
 import torch.nn as nn
 import torch
-import dgl
-import copy
 import fitlog
 import tqdm
 import torch.nn.functional as F
 from model import OUTPUT_NUM
+import json
+import os
 
 def f1_metric(y_pred,y_true):
     tp = (y_true * y_pred).sum().to(torch.float32)
@@ -21,6 +21,30 @@ def f1_metric(y_pred,y_true):
 
     return tp.item(),tn.item(),fp.item(),fn.item()
 
+def gen_train_facts(data_file_name):
+    fact_file_name = data_file_name
+    fact_file_name = fact_file_name.replace(".json", ".fact")
+
+    if os.path.exists(fact_file_name):
+        fact_in_train = set([])
+        triples = json.load(open(fact_file_name))
+        for x in triples:
+            fact_in_train.add(tuple(x))
+        return fact_in_train
+
+    fact_in_train = set([])
+    ori_data = json.load(open(data_file_name))
+    for data in ori_data:
+        vertexSet = data['vertexSet']
+        for label in data['labels']:
+            rel = label['r']
+            for n1 in vertexSet[label['h']]:
+                for n2 in vertexSet[label['t']]:
+                    fact_in_train.add((n1['name'], n2['name'], rel))
+
+    json.dump(list(fact_in_train), open(fact_file_name, "w"))
+
+    return fact_in_train
 
 class Trainner(nn.Module):
     def __init__(self,config,model,optimizer,criterion):
@@ -47,6 +71,26 @@ class Trainner(nn.Module):
 
         self.lr = config.lr
         self.device = config.device
+
+        self.fact_in_train = gen_train_facts("../DocRED/train_annotated.json")
+        truth = json.load(open("../DocRED/dev.json",'r'))
+        self.std = {}
+        self.titleset = set([])
+
+        self.title2vectexSet = {}
+
+        for x in truth:
+            title = x['title']
+            self.titleset.add(title)
+
+            vertexSet = x['vertexSet']
+            self.title2vectexSet[title] = vertexSet
+
+            for label in x['labels']:
+                r = label['r']
+                h_idx = label['h']
+                t_idx = label['t']
+                self.std[(title, r, h_idx, t_idx)] = set(label['evidence'])
         
         if config.debug:
             fitlog.set_log_dir("../debug_logs")
@@ -56,20 +100,7 @@ class Trainner(nn.Module):
         
         self.theta = config.theta
     
-    
-    def forward_step(self,batch_data):
-        out = self.model(batch_data)
 
-        return out
-    
-    def backward_step(self,logits,labels):
-        loss = self.criterion(logits.reshape(-1,logits.shape[-1]),labels.reshape(-1))
-        loss.backward()
-
-        for p in self.model.embed.parameters():
-            print(p.grad)
-
-        return loss
 
     def train(self,train_loader,dev_loader):
         print(self.model.parameters)
@@ -91,21 +122,6 @@ class Trainner(nn.Module):
                 loss = loss.sum(dim=-1) * label_mask
                 loss = loss.sum() / label_mask.sum()
 
-                # na_indices = (labels == 0).nonzero().squeeze(-1)
-                # ignore_indices = (labels == -1).nonzero().squeeze(-1)
-                # num_na = na_indices.shape[0]
-                # num_pos = labels.shape[0] - num_na
-                
-                # loss_weight = torch.FloatTensor([1/num_pos * labels.shape[0]]).to(self.device)
-                # loss_weight[na_indices] = 1/num_na
-                # loss_weight[ignore_indices] = 0
-
-                
-                # loss = torch.mul(loss,loss_weight)
-                # loss = torch.sum(loss) / (labels.shape[0] - ignore_indices.shape[0])
-
-
-
                 epoch_loss += loss.item()
                 loss.backward()
                 self.forward_count += 1
@@ -125,14 +141,96 @@ class Trainner(nn.Module):
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            p,r,f1 = self.evaluate_multi(dev_loader)
-            print("Eval Results Epoch: {} || Step:{}/{} || Precision: {} || Recall: {} || F1: {}".format(self.epoch_count,self.step_count,self.total_steps,p,r,f1))
-            fitlog.add_metric({"dev":{"Precision":p}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"Recall":r}}, step=self.step_count,epoch=self.epoch_count)
-            fitlog.add_metric({"dev":{"F1":f1}}, step=self.step_count,epoch=self.epoch_count)
+            results = official_evaluate(dev_loader)
+            print("Eval Results Epoch: {}".format(self.epoch_count))
+            for metric in results:
+                fitlog.add_metric({"dev":metric},step=self.step_count,epoch=self.epoch_count)
+                metric_name = list(metric.keys())[0]
+                print("{}: {}".format(metric_name,metric[metric_name]))
+            # print("Eval Results Epoch: {} || Step:{}/{} || Precision: {} || Recall: {} || F1: {}".format(self.epoch_count,self.step_count,self.total_steps,p,r,f1))
+            # fitlog.add_metric({"dev":{"Precision":p}}, step=self.step_count,epoch=self.epoch_count)
+            # fitlog.add_metric({"dev":{"Recall":r}}, step=self.step_count,epoch=self.epoch_count)
+            # fitlog.add_metric({"dev":{"F1":f1}}, step=self.step_count,epoch=self.epoch_count)
             # fitlog.add_metric({"dev":{"Loss":test_loss}},step=self.step_count,epoch=self.epoch_count)
             self.epoch_count += 1
     
+    def official_evaluate(self,test_loader):
+        self.model.eval()
+
+        ## generate submission answer
+        tmp = []
+        with torch.no_grad():
+            for test_batch in test_loader:
+                titles = test_batch['title']
+                logits = self.model(test_batch)
+                batch_label_mask = test_batch['label_mask'].to(self.device)
+                batch_orig_pairs = test_batch['orig_pair']
+                batch_predictions_re = (torch.sigmoid(logits) > self.theta).to(torch.int64)
+
+                for i in range(len(titles)):
+                    title = titles[i]
+                    prediction = batch_predictions_re[i]
+                    orig_pairs = batch_orig_pairs[i]
+                    mask = batch_label_mask[i]
+                    prediction = prediction[(mask!=0).nonzero().squeeze(-1)].cpu()
+                    assert(prediction.shape[0] == len(orig_pairs))
+
+                    for i,[h_idx,t_idx] in enumerate(orig_pairs):
+                        for r in range(prediction.shape[0]):
+                            if prediction[r] == 1:
+                                tmp.append({'title':title, 'h_idx':h_idx, 't_idx':t_idx, 'r':r})
+
+
+        tmp.sort(key=lambda x: (x['title'], x['h_idx'], x['t_idx'], x['r']))
+        submission_answer = [tmp[0]]
+        for i in range(1, len(tmp)):
+            x = tmp[i]
+            y = tmp[i-1]
+            if (x['title'], x['h_idx'], x['t_idx'], x['r']) != (y['title'], y['h_idx'], y['t_idx'], y['r']):
+                submission_answer.append(tmp[i])
+
+        correct_re = 0
+
+        correct_in_train_annotated = 0
+        titleset2 = set([])
+        for x in submission_answer:
+            title = x['title']
+            h_idx = x['h_idx']
+            t_idx = x['t_idx']
+            r = x['r']
+            titleset2.add(title)
+            if title not in self.title2vectexSet:
+                continue
+            vertexSet = self.title2vectexSet[title]
+
+            if (title, r, h_idx, t_idx) in self.std:
+                correct_re += 1
+                in_train_annotated = False
+                for n1 in vertexSet[h_idx]:
+                    for n2 in vertexSet[t_idx]:
+                        if (n1['name'], n2['name'], r) in self.fact_in_train:
+                            in_train_annotated = True
+
+                if in_train_annotated:
+                    correct_in_train_annotated += 1
+
+        re_p = 1.0 * correct_re / len(submission_answer)
+        re_r = 1.0 * correct_re / len(self.std)
+        if re_p+re_r == 0:
+            re_f1 = 0
+        else:
+            re_f1 = 2.0 * re_p * re_r / (re_p + re_r)
+
+
+        re_p_ignore_train_annotated = 1.0 * (correct_re-correct_in_train_annotated) / (len(submission_answer)-correct_in_train_annotated)
+    
+        if re_p_ignore_train_annotated+re_r == 0:
+            re_f1_ignore_train_annotated = 0
+        else:
+            re_f1_ignore_train_annotated = 2.0 * re_p_ignore_train_annotated * re_r / (re_p_ignore_train_annotated + re_r)
+
+        return {"F1":re_f1},{"Ign F1":re_f1_ignore_train_annotated}
+        
 
     def evaluate_multi(self,test_loader):
         self.model.eval()

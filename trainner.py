@@ -243,9 +243,10 @@ class Trainner(nn.Module):
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1]).to(torch.float)
+                label_masks = batch['label_mask'].to(self.device).reshape(-1).to(torch.float)
                 predections_re = (torch.sigmoid(logits) > self.theta).to(torch.float)
                 
-                indices = (labels != -1).nonzero().squeeze(-1)
+                indices = (label_masks != 0).nonzero().squeeze(-1)
                 labels = labels[indices]
                 predections_re = predections_re[indices]
                 

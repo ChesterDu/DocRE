@@ -72,7 +72,7 @@ class finalModel(nn.Module):
 
         # GNNs
         if config.gnn == 'rgat':
-            self.gnn = multiLayerRGAT(self.node_in_dim,config.node_dim,config.node_out_dim,config.edge_type_emb_dim,config.edge_dim,config.M,config.K,config.L,activation=make_activation(config.gnn_activation))
+            self.gnn = multiLayerRGAT(self.node_in_dim,config.node_dim,config.node_out_dim,config.edge_type_emb_dim,config.edge_dim,config.M,config.K,config.L,activation=make_activation(config.gnn_activation),dropout=config.dropout)
             self.relEmb = nn.Embedding(REL_TYPE_NUM,config.edge_type_emb_dim)
             for p in self.relEmb.parameters():
                 if p.dim() >= 2:
@@ -80,7 +80,7 @@ class finalModel(nn.Module):
                 else:
                     torch.nn.init.normal_(p)
         if config.gnn == 'rgcn':
-            self.gnn = multiLayerRGCN(self.node_in_dim,config.node_dim,config.node_out_dim,REL_TYPE_NUM,config.L,activation=make_activation(config.gnn_activation))
+            self.gnn = multiLayerRGCN(self.node_in_dim,config.node_dim,config.node_out_dim,REL_TYPE_NUM,config.L,activation=make_activation(config.gnn_activation),dropout=config.dropout)
         
         for p in self.gnn.parameters():
             if p.dim() >= 2:
@@ -91,6 +91,7 @@ class finalModel(nn.Module):
         # Prediction Layer
         self.pred_fc = nn.Sequential(nn.Linear(4*config.node_out_dim,2*config.node_out_dim),
                                      self.pred_activation,
+                                     nn.Dropout(config.dropout),
                                      nn.Linear(2*config.node_out_dim,OUTPUT_NUM)
                                     )
         for p in self.pred_fc.parameters():

@@ -1,11 +1,10 @@
-import argparse
 import random
 from random import shuffle
 from collections import defaultdict
 from config import parse_config, print_config
 from trainner import Trainner
 from model import finalModel
-from data import graphDataset, build_vocab, collate_fn, rel2id
+from data import graphDataset, build_vocab, collate_fn, rel2id, collate_fn_test
 from opt import OpenAIAdam
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
@@ -30,31 +29,40 @@ dev_data_pth = "../DocRED/data/dev_amr_annotated_full.json"
 dev_processed_data_pth = "../DocRED/data/dev_amr_annotated_full_processed.json"
 vocab = build_vocab(train_data_pth,test_data_pth,dev_data_pth)
 
-train_dataset = graphDataset(config,train_processed_data_pth,train_data_pth,vocab,ignore_label_idx=-1,split='train')
+train_dataset = graphDataset(config,"None",train_data_pth,vocab,ignore_label_idx=-1,split='train')
 # test_dataset = graphDataset(test_data_pth,vocab,seed=config.seed,max_token_len=config.max_token_len,ignore_label_idx=-1,split='test')
-dev_dataset = graphDataset(config,dev_processed_data_pth,dev_data_pth,vocab,ignore_label_idx=-1,split='dev')
+dev_dataset = graphDataset(config,"None",dev_data_pth,vocab,ignore_label_idx=-1,split='dev',fact_in_train=train_dataset.fact_in_train)
 
 train_loader = DataLoader(train_dataset, num_workers=2, batch_size=config.train_batch_size, shuffle=True, collate_fn = collate_fn)
 # test_loader = DataLoader(test_dataset, num_workers=2, batch_size=config.eval_batch_size, shuffle=True, collate_fn= collate_fn)
-dev_loader = DataLoader(dev_dataset, num_workers=2, batch_size=config.train_batch_size, shuffle=True, collate_fn= collate_fn)
+dev_loader = DataLoader(dev_dataset, num_workers=2, batch_size=config.eval_batch_size, shuffle=True, collate_fn= collate_fn)
 
 ## Make model
-model = finalModel(vocab,config)
+model = finalModel(vocab,config).to(config.device)
 # model = debugModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
 
 ## Make Optimizer and Criterion
 # optimizer = torch.optim.Adam(model.parameters(),lr=config.lr)
-optimizer = OpenAIAdam(model.parameters(),
-                                  lr=config.lr,
-                                  schedule='warmup_linear',
-                                  warmup=0.002,
-                                  t_total=config.total_steps,
-                                  b1=0.9,
-                                  b2=0.999,
-                                  e=1e-08,
-                                  l2=0.01,
-                                  vector_l2=True,
-                                  max_grad_norm=config.clip)
+total_steps = (config.epoch * len(train_loader) - 1) // config.num_acumulation + 1
+# optimizer = OpenAIAdam(filter(lambda p: p.requires_grad, model.parameters()),
+#                                   lr=config.lr,
+#                                   schedule='warmup_linear',
+#                                   warmup=0.002,
+#                                   t_total=total_steps,
+#                                   b1=0.9,
+#                                   b2=0.999,
+#                                   e=1e-08,
+#                                   l2=0.01,
+#                                   vector_l2=True,
+#                                   max_grad_norm=config.clip)
+bert_param_ids = list(map(id, model.embed.parameters()))
+base_params = filter(lambda p: p.requires_grad and id(p) not in bert_param_ids, model.parameters())
+
+optimizer = torch.optim.AdamW([
+    {'params': model.embed.parameters(), 'lr': config.lr * 0.01},
+    {'params': base_params, 'weight_decay': config.weight_decay}
+], lr=config.lr)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=(config.epoch // 4) + 1)
 # optimizer = torch.optim.SGD(model.parameters(),lr=config.lr)
 
 if config.use_loss_weight:
@@ -86,5 +94,5 @@ else:
     criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
 
 ## Make Trainner
-trainner = Trainner(config,model,optimizer,criterion)
+trainner = Trainner(config,model,optimizer,criterion,scheduler=scheduler)
 trainner.train(train_loader,dev_loader)

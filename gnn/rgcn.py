@@ -8,12 +8,13 @@ import dgl.function as fn
 
 
 class LayerRGCN(nn.Module):
-    def __init__(self,in_feat,out_feat,rel_num,activation):
+    def __init__(self,in_feat,out_feat,rel_num,activation,dropout=0.0):
         super(LayerRGCN,self).__init__()
         self.in_feat = in_feat
         self.out_feat = out_feat
         self.rel_num = rel_num
         self.activation = activation
+        self.dropout = nn.Dropout(dropout)
 
         self.weight = Parameter(torch.Tensor(rel_num,in_feat,out_feat))
         self.W_0 = Parameter(torch.Tensor(in_feat,out_feat))
@@ -32,6 +33,7 @@ class LayerRGCN(nn.Module):
         h = nodes.data['h']
         out = torch.mm(h,self.W_0) + h_sum
         out = self.activation(out)
+        out = self.dropout(out)
         return {'h':out}
 
     def forward(self,g):
@@ -39,7 +41,7 @@ class LayerRGCN(nn.Module):
 
 
 class multiLayerRGCN(nn.Module):
-    def __init__(self,node_in_dim,node_dim,node_out_dim,rel_num,L,activation):
+    def __init__(self,node_in_dim,node_dim,node_out_dim,rel_num,L,activation,dropout=0.0):
         super(multiLayerRGCN,self).__init__()
         self.L = L
         self.node_in_dim = node_in_dim
@@ -48,16 +50,17 @@ class multiLayerRGCN(nn.Module):
         self.node_in_fc = nn.Linear(node_in_dim,node_dim)
         self.node_out_fc = nn.Linear(node_dim,node_out_dim)
         self.gnns = nn.ModuleList([LayerRGCN(node_dim,node_dim,rel_num,activation) for _ in range(L)])
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self,g,node_in_feat):
-        h = F.relu(self.node_in_fc(node_in_feat))
+        h = self.dropout(F.relu(self.node_in_fc(node_in_feat)))
         g.ndata['h'] = h
 
         for layer in self.gnns:
             layer(g)
         
         out_feat = g.ndata.pop('h')
-        out = F.relu(self.node_out_fc(out_feat))
+        out = self.dropout(F.relu(self.node_out_fc(out_feat)))
         
         return out
 

@@ -1,6 +1,8 @@
 
 import argparse
 
+from torch.backends.cudnn import flags
+
 def parse_config():
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug',action='store_true')
@@ -29,10 +31,12 @@ def parse_config():
     parser.add_argument('--M',default=3,type=int)
     parser.add_argument('--K',default=3,type=int)
     parser.add_argument('--L',default=2,type=int)
+    parser.add_argument('--dropout',default=0.6,type=float)
 
     parser.add_argument('--use_ner_feature',action='store_true')
     parser.add_argument('--use_attr_feature',action='store_true')
     parser.add_argument('--use_loss_weight',action='store_true')
+    parser.add_argument('--use_amr_graph',action='store_true')
 
     parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
@@ -41,6 +45,7 @@ def parse_config():
     parser.add_argument('--theta',default=0.8,type=float)
     parser.add_argument('--lr',default=1e-3,type=float)
     parser.add_argument('--clip',default=1.0,type=float)
+    parser.add_argument('--weight_decay',default=0.0001,type=float)
     parser.add_argument('--num_acumulation',default=1,type=int)
     parser.add_argument('--total_steps',default=10000,type=int)
     parser.add_argument('--metric_check_freq',default=100,type=int)
@@ -51,7 +56,7 @@ def parse_config():
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
 
     config = parser.parse_args()
-#     config = parser.parse_args(args=[])
+    # config = parser.parse_args(args=[])
 
 
     return config

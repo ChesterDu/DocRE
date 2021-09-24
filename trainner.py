@@ -1,4 +1,3 @@
-from dgl.batch import batch
 import torch.nn as nn
 import torch
 import fitlog
@@ -7,6 +6,8 @@ import torch.nn.functional as F
 from model import OUTPUT_NUM
 import json
 import os
+import numpy as np
+import sklearn
 
 def f1_metric(y_pred,y_true):
     tp = (y_true * y_pred).sum().to(torch.float32)
@@ -47,15 +48,16 @@ def gen_train_facts(data_file_name):
     return fact_in_train
 
 class Trainner(nn.Module):
-    def __init__(self,config,model,optimizer,criterion):
+    def __init__(self,config,model,optimizer,criterion,scheduler=None):
         super(Trainner,self).__init__()
         
         self.log_pth = config.log_pth
         self.checkpoint_pth = config.checkpoint_pth
         
-        self.model = model.to(config.device)
+        self.model = model
         self.optimizer = optimizer
         self.criterion = criterion
+        self.scheduler = scheduler
 
         self.time = 0
 
@@ -70,6 +72,7 @@ class Trainner(nn.Module):
         self.epoch_count = 1
 
         self.lr = config.lr
+        self.clip = config.clip
         self.device = config.device
 
         self.fact_in_train = gen_train_facts("../DocRED/data/train_annotated.json")
@@ -105,15 +108,19 @@ class Trainner(nn.Module):
     def train(self,train_loader,dev_loader):
         print(self.model.parameters)
         self.total_steps = (self.epoch * len(train_loader) - 1) // self.num_acumulation + 1
-        bar = tqdm.tqdm(total=self.total_steps)
-        bar.update(0)
+        # bar = tqdm.tqdm(total=self.total_steps)
+        # bar.update(0)
 
         # epoch_num = (self.total_steps - 1) // len(train_loader) + 1
         # while(self.step_count < self.total_steps):
         while(self.epoch_count <= self.epoch):
             self.model.train()
             epoch_loss = 0
-            for batch_data in train_loader:
+            total_Na = 0
+            correct_Na = 0
+            total_not_Na = 0
+            correct_not_Na = 0
+            for cur_i,batch_data in enumerate(train_loader):
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 multi_labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1]).to(torch.float)
@@ -126,10 +133,30 @@ class Trainner(nn.Module):
                 loss.backward()
                 self.forward_count += 1
 
+                output = torch.argmax(logits, dim=-1)
+                output = output.data.cpu().numpy()
+                relation_label = batch_data['label'].reshape(-1).data.cpu().numpy()
+
+                for i in range(output.shape[0]):
+                    label = relation_label[i]
+                    if label < 0:
+                        break
+
+                    is_correct = (output[i] == label)
+                    if label == 0:
+                        total_Na += 1
+                        correct_Na += is_correct
+                    else:
+                        total_not_Na += 1
+                        correct_not_Na += is_correct
+
                 if (self.forward_count % self.num_acumulation) == 0:
+                    nn.utils.clip_grad_value_(self.model.parameters(),self.clip)
                     self.optimizer.step()
+                    if self.scheduler != None:
+                        self.scheduler.step(self.epoch_count)
                     self.step_count += 1
-                    bar.update(1)
+                    # bar.update(1)
                     fitlog.add_loss(loss.item(),name='Loss',step=self.step_count)
                     self.optimizer.zero_grad()
                     if self.step_count >= self.total_steps:
@@ -137,11 +164,13 @@ class Trainner(nn.Module):
 
 
                     if (self.step_count % self.loss_print_freq) == 0:
-                        print("Epoch:{}/{} || Step:{}/{} || Loss:{}".format(self.epoch_count,self.epoch,self.step_count,self.total_steps,epoch_loss/self.forward_count))
+                        print("Epoch:{}/{} || Step:{}/{} || Loss:{} || NA Acc: {} ||not NA Acc: {}".format( \
+                            self.epoch_count,self.epoch,self.step_count,self.total_steps,epoch_loss/(cur_i + 1),\
+                            correct_Na/total_Na,correct_not_Na/total_not_Na))
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')
-            results = self.official_evaluate(dev_loader)
+            results = self.evaluate_multi(dev_loader)
             print("Eval Results Epoch: {}".format(self.epoch_count))
             for metric in results:
                 fitlog.add_metric({"dev":metric},step=self.step_count,epoch=self.epoch_count)
@@ -176,7 +205,7 @@ class Trainner(nn.Module):
                     assert(prediction.shape[0] == len(orig_pairs))
 
                     for i,[h_idx,t_idx] in enumerate(orig_pairs):
-                        for r in range(prediction.shape[1]):
+                        for r in range(1,prediction.shape[1]):
                             if prediction[i][r] == 1:
                                 tmp.append({'title':title, 'h_idx':h_idx, 't_idx':t_idx, 'r':r})
 
@@ -234,33 +263,41 @@ class Trainner(nn.Module):
 
     def evaluate_multi(self,test_loader):
         self.model.eval()
+        candidate_thetas = np.linspace(0.1,0.9,9)
         with torch.no_grad():
-            total_tp = 0
-            total_tn = 0
-            total_fp = 0
-            total_fn = 0
+            total_tps = np.zeros(len(candidate_thetas))
+            total_tns = np.zeros(len(candidate_thetas))
+            total_fps = np.zeros(len(candidate_thetas))
+            total_fns = np.zeros(len(candidate_thetas))
             for batch_data in test_loader:
                 logits = self.model(batch_data)
                 logits = logits.reshape(-1,logits.shape[-1])
                 labels = batch_data['multi_label'].to(self.device).reshape(-1,logits.shape[-1]).to(torch.float)
-                predections_re = (torch.sigmoid(logits) > self.theta).to(torch.float)
-                
-                indices = (labels != -1).nonzero().squeeze(-1)
+                label_masks = batch_data['label_mask'].to(self.device).reshape(-1).to(torch.float)
+                indices = (label_masks != 0).nonzero().squeeze(-1)
                 labels = labels[indices]
-                predections_re = predections_re[indices]
-                
-                tp,tn,fp,fn = f1_metric(predections_re,labels)
-                total_tp += tp
-                total_tn += tn
-                total_fp += fp
-                total_fn += fn
+                prob_score = torch.sigmoid(logits[indices])
+
+                for theta_i,theta in enumerate(candidate_thetas):
+                    predections_re = (prob_score > theta).to(torch.float)
+                    
+                    tp,tn,fp,fn = f1_metric(predections_re[:,1:],labels[:,1:])
+                    total_tps[theta_i] += tp
+                    total_tns[theta_i] += tn
+                    total_fps[theta_i] += fp
+                    total_fns[theta_i] += fn
 
              
             epsilon = 1e-7
-            p = total_tp / (total_tp + total_fp + epsilon)
-            r = total_tp / (total_tp + total_fn + epsilon)
-            f1 = 2* (p*r) / (p + r + epsilon)
-        return p,r,f1
+            ps = total_tps / (total_tps + total_fps + epsilon)
+            rs = total_tps / (total_tps + total_fns + epsilon)
+            f1s = 2* (ps*rs) / (ps + rs + epsilon)
+            f1 = f1s.max()
+            f1_pos = f1.argmax()
+            p = ps[f1_pos]
+            r = rs[f1_pos]
+            theta = candidate_thetas[f1_pos]
+        return {'Precision':p},{'Recall':r},{'F1':f1},{'Theta':theta}
 
         
     def evaluate(self,test_loader):
@@ -311,4 +348,200 @@ class Trainner(nn.Module):
             na_p,na_r,na_f1 = f1_metric(total_na_pred,total_na_label)
 
         return {"nonNa_p":nonNa_p,"nonNa_r":nonNa_r,"nonNa_f1":nonNa_f1,"na_p":na_p,"na_r":na_r,"na_f1":na_f1}
+
+    def evaluate_auc(self, dataloader, input_theta=-1,relation_num=97):
+
+        total_recall_ignore = 0
+
+        test_result = []
+        total_recall = 0
+        total_steps = len(dataloader)
+        bar = tqdm.tqdm(total=total_steps)
+        bar.update(0)
+        for cur_i, test_batch in enumerate(dataloader):
+
+            with torch.no_grad():
+                logits = self.model(test_batch)
+                predict_re = torch.sigmoid(logits)
+
+            predict_re = predict_re.data.cpu().numpy()
+            labels = test_batch['label']
+            L_vertex = test_batch['ent_num']
+            titles = test_batch['title']
+
+            for i in range(len(labels)):
+                label = labels[i]
+                L = L_vertex[i]
+                title = titles[i]
+                total_recall += len(label)
+
+                for l in label.values():
+                    if not l:
+                        total_recall_ignore += 1
+
+                j = 0
+
+                for h_idx in range(L):
+                    for t_idx in range(L):
+                        if h_idx != t_idx:
+                            for r in range(1, relation_num):
+                                rel_ins = (h_idx, t_idx, r)
+                                intrain = label.get(rel_ins, False)
+
+                                test_result.append((rel_ins in label, float(predict_re[i, j, r]), intrain,
+                                                        title, h_idx, t_idx, r))
+
+                            j += 1
+            
+            bar.update(1)
+
+        test_result.sort(key=lambda x: x[1], reverse=True)
+        print(test_result[:100])
+        print(len(test_result))
+
+        pr_x = []
+        pr_y = []
+        correct = 0
+        w = 0
+
+        if total_recall == 0:
+            total_recall = 1
+
+        for i, item in enumerate(test_result):
+            correct += item[0]
+            pr_y.append(float(correct) / (i + 1))  # Precision
+            pr_x.append(float(correct) / total_recall)  # Recall
+            if item[1] > input_theta:
+                w = i
+
+        pr_x = np.asarray(pr_x, dtype='float32')
+        pr_y = np.asarray(pr_y, dtype='float32')
+        f1_arr = (2 * pr_x * pr_y / (pr_x + pr_y + 1e-20))
+        f1 = f1_arr.max()
+        f1_pos = f1_arr.argmax()
+        theta = test_result[f1_pos][1]
+
+        if input_theta == -1:
+            w = f1_pos
+            input_theta = theta
+
+        auc = sklearn.metrics.auc(x=pr_x, y=pr_y)
+
+        print('ma_f1 {:3.4f} | input_theta {:3.4f} test_result P {:3.4f} test_result R {:3.4f} test_result F1 {:3.4f} | AUC {:3.4f}' \
+            .format(f1, input_theta, pr_y[w], pr_x[w], f1_arr[w], auc))
+
+        pr_x = []
+        pr_y = []
+        correct = correct_in_train = 0
+        w = 0
+
+        # https://github.com/thunlp/DocRED/issues/47
+        for i, item in enumerate(test_result):
+            correct += item[0]
+            if item[0] & item[2]:
+                correct_in_train += 1
+            if correct_in_train == correct:
+                p = 0
+            else:
+                p = float(correct - correct_in_train) / (i + 1 - correct_in_train)
+            pr_y.append(p)
+            pr_x.append(float(correct) / total_recall)
+
+            if item[1] > input_theta:
+                w = i
+
+        pr_x = np.asarray(pr_x, dtype='float32')
+        pr_y = np.asarray(pr_y, dtype='float32')
+        f1_arr = (2 * pr_x * pr_y / (pr_x + pr_y + 1e-20))
+        ign_f1 = f1_arr.max()
+
+        ign_auc = sklearn.metrics.auc(x=pr_x, y=pr_y)
+
+        print(
+            'Ignore ma_f1 {:3.4f} | inhput_theta {:3.4f} test_result P {:3.4f} test_result R {:3.4f} test_result F1 {:3.4f} | AUC {:3.4f}' \
+                .format(ign_f1, input_theta, pr_y[w], pr_x[w], f1_arr[w], auc))
+
+        return {'F1':f1}, {'Ign F1':ign_f1}, {'AUC':auc}, {'Ign AUC':ign_auc},{'theta':input_theta}
+
+
+    def evaluate_fix_theta(self,dataloader,relation_num=97):
+        
+        candidate_thetas = np.linspace(0.1,0.9,num=9)
+        test_result_set_lst = [set() for i in range(len(candidate_thetas))]
+        ignore_test_result_set_lst = [set() for i in range(len(candidate_thetas))]
+        std_set = set()
+        ignore_std_set = set()
+        total_recall = 0
+        total_steps = len(dataloader)
+        bar = tqdm.tqdm(total=total_steps)
+        bar.update(0)
+        for cur_i, test_batch in enumerate(dataloader):
+            labels = test_batch['label']
+            L_vertex = test_batch['ent_num']
+            titles = test_batch['title']
+            with torch.no_grad():
+                logits = self.model(test_batch)
+                predict_re_prob = torch.sigmoid(logits)
+
+            for batch_i in range(len(labels)):
+                label = labels[batch_i]
+                L = L_vertex[batch_i]
+                title = titles[batch_i]
+                total_recall += len(label)
+
+                for h_idx,t_idx,r in label.keys():
+                    std_set.add((title,r,h_idx,t_idx))
+                    intrain = label[(h_idx,t_idx,r)]
+                    if not intrain:
+                        ignore_std_set.add((title,r,h_idx,t_idx))
+
+           
+                for theta_i,theta in enumerate(candidate_thetas):
+                    with torch.no_grad():
+                        predict_re = (predict_re_prob[batch_i] > theta).to(torch.int)
+                    predict_re = predict_re.data.cpu().numpy()
+                    test_result_set = test_result_set_lst[theta_i]
+                    ignore_test_result_set = ignore_test_result_set_lst[theta_i]
+
+                    j = 0
+
+                    for h_idx in range(L):
+                        for t_idx in range(L):
+                            if h_idx != t_idx:
+                                for r in range(1, relation_num):
+                                    if predict_re[j,r] == 1:
+                                        test_result_set.add((title,r,h_idx,t_idx))
+                                        intrain = label.get((h_idx,t_idx,r),False)
+                                        if not intrain:
+                                            ignore_test_result_set.add((title,r,h_idx,t_idx))
+
+                                j += 1
+            
+            bar.update(1)
+        
+        def calculate_precision_recall(test_result_set,std_set):
+            eplison = 1e-7
+            tp = len(test_result_set & std_set)
+            p = tp / len(test_result_set)
+            r = tp / len(std_set)
+            return p,r
+        
+        p_lst,r_lst,ign_p_lst,ign_r_lst = np.zeros(len(candidate_thetas)),np.zeros(len(candidate_thetas)),np.zeros(len(candidate_thetas)),np.zeros(len(candidate_thetas))
+        for theta_i in range(len(candidate_thetas)):
+            p,r = calculate_precision_recall(test_result_set_lst[theta_i],std_set)
+            ign_p,ign_r = calculate_precision_recall(ignore_test_result_set_lst[theta_i],ignore_std_set)
+            p_lst[theta_i],r_lst[theta_i],ign_p_lst[theta_i],ign_r_lst[theta_i] = p,r,ign_p,ign_r
+        
+        f1_lst = 2 * p_lst * r_lst / (p_lst + r_lst + 1e-7)
+        f1 = f1_lst.max()
+        f1_theta_pos = f1_lst.argmax()
+        f1_theta = candidate_thetas[f1_theta_pos]
+
+        ign_f1_lst = 2 * ign_p_lst * ign_r_lst / (ign_p_lst + ign_r_lst + 1e-7)
+        ign_f1 = ign_f1_lst.max()
+        ign_f1_pos = ign_f1_lst.argmax()
+        ign_f1_theta = candidate_thetas[ign_f1_pos]
+
+        return {'F1':f1},{'F1 Theta':f1_theta},{'Ign F1':ign_f1},{'Ign F1 Theta':ign_f1_theta}
+
 

@@ -6,7 +6,7 @@ from torch.nn.parameter import Parameter
 import dgl.function as fn
 
 class LayerRGAT(nn.Module):
-    def __init__(self,node_dim,edge_dim,M,K,activation):
+    def __init__(self,node_dim,edge_dim,M,K,activation,dropout=0.0):
         ## 
         # M: number of relation attention head
         # K: number of node attention head
@@ -27,11 +27,12 @@ class LayerRGAT(nn.Module):
         self.rel_att_b2 = Parameter(torch.randn((M,1,1)))
 
         self.activation = activation
+        self.dropout = nn.Dropout(dropout)
 
-        self.node_out_fc = nn.Sequential(nn.Linear(2 * node_dim,node_dim), self.activation)
+        self.node_out_fc = nn.Sequential(nn.Linear(2 * node_dim,node_dim), self.activation,self.dropout)
 
-        self.node_fc = nn.Sequential(nn.Linear(node_dim,node_dim), self.activation)
-        self.edge_fc = nn.Sequential(nn.Linear(edge_dim,edge_dim), self.activation)
+        self.node_fc = nn.Sequential(nn.Linear(node_dim,node_dim), self.activation,self.dropout)
+        self.edge_fc = nn.Sequential(nn.Linear(edge_dim,edge_dim), self.activation,self.dropout)
 
         # self.output_gate_W = nn.Linear(node_dim,1)
 
@@ -84,13 +85,14 @@ class LayerRGAT(nn.Module):
 
 
 class multiLayerRGAT(nn.Module):
-    def __init__(self,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,activation):
+    def __init__(self,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L,activation,dropout=0.0):
         super(multiLayerRGAT,self).__init__()
         self.activation = activation
-        self.RGATS = nn.ModuleList([LayerRGAT(node_dim,edge_dim,M,K,activation) for _ in range(L)])
-        self.node_in_fc = nn.Sequential(nn.Linear(node_in_dim,node_dim),self.activation)
-        self.edge_in_fc = nn.Sequential(nn.Linear(edge_in_dim,edge_dim),self.activation)
-        self.node_out_fc = nn.Sequential(nn.Linear(node_dim,node_out_dim),self.activation)
+        self.dropout = nn.Dropout(dropout)
+        self.RGATS = nn.ModuleList([LayerRGAT(node_dim,edge_dim,M,K,activation,dropout=dropout) for _ in range(L)])
+        self.node_in_fc = nn.Sequential(nn.Linear(node_in_dim,node_dim),self.activation,self.dropout)
+        self.edge_in_fc = nn.Sequential(nn.Linear(edge_in_dim,edge_dim),self.activation,self.dropout)
+        self.node_out_fc = nn.Sequential(nn.Linear(node_dim,node_out_dim),self.activation,self.dropout)
         self.L = L
     def forward(self,g,node_features,edge_features):
         node_features = self.node_in_fc(node_features)

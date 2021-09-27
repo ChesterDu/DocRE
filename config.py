@@ -10,7 +10,7 @@ def parse_config():
     parser.add_argument('--epoch',default=20,type=int)
     parser.add_argument('--train_batch_size',default=4,type=int)
     parser.add_argument('--eval_batch_size',default=8,type=int)
-    parser.add_argument('--max_token_len',default=530,type=int)
+    parser.add_argument('--max_token_len',default=512,type=int)
     parser.add_argument('--naPairs_alpha',default=2.0,type=float)
 
     parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat'])
@@ -35,8 +35,10 @@ def parse_config():
 
     parser.add_argument('--use_ner_feature',action='store_true')
     parser.add_argument('--use_attr_feature',action='store_true')
+    parser.add_argument('--use_doc_feature',action='store_true')
     parser.add_argument('--use_loss_weight',action='store_true')
     parser.add_argument('--use_amr_graph',action='store_true')
+    parser.add_argument('--bert_finetune_baseline',action='store_true')
 
     parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])

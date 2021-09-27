@@ -1,5 +1,4 @@
 import dgl
-from dgl.batch import batch
 import torch.nn.functional as F
 import copy
 import torch

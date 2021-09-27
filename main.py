@@ -3,8 +3,10 @@ from random import shuffle
 from collections import defaultdict
 from config import parse_config, print_config
 from trainner import Trainner
-from model import finalModel
-from data import graphDataset, build_vocab, collate_fn, rel2id, collate_fn_test
+# from model import finalModel
+import bert_model
+import data
+import data_bert
 from opt import OpenAIAdam
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
@@ -27,18 +29,19 @@ test_data_pth = "../DocRED/data/test_amr_annotated_full.json"
 test_processed_data_pth = "../DocRED/data/test_amr_annotated_full_processed.json"
 dev_data_pth = "../DocRED/data/dev_amr_annotated_full.json"
 dev_processed_data_pth = "../DocRED/data/dev_amr_annotated_full_processed.json"
-vocab = build_vocab(train_data_pth,test_data_pth,dev_data_pth)
 
-train_dataset = graphDataset(config,"None",train_data_pth,vocab,ignore_label_idx=-1,split='train')
+vocab = data.build_vocab(train_data_pth,test_data_pth,dev_data_pth)
+
+train_dataset = data_bert.BertGraphDataset(config,"None",train_data_pth,vocab,ignore_label_idx=-1,split='train')
 # test_dataset = graphDataset(test_data_pth,vocab,seed=config.seed,max_token_len=config.max_token_len,ignore_label_idx=-1,split='test')
-dev_dataset = graphDataset(config,"None",dev_data_pth,vocab,ignore_label_idx=-1,split='dev',fact_in_train=train_dataset.fact_in_train)
+dev_dataset = data_bert.BertGraphDataset(config,"None",dev_data_pth,vocab,ignore_label_idx=-1,split='dev',fact_in_train=train_dataset.fact_in_train)
 
-train_loader = DataLoader(train_dataset, num_workers=2, batch_size=config.train_batch_size, shuffle=True, collate_fn = collate_fn)
+train_loader = DataLoader(train_dataset, num_workers=2, batch_size=config.train_batch_size, shuffle=True, collate_fn = data_bert.collate_fn)
 # test_loader = DataLoader(test_dataset, num_workers=2, batch_size=config.eval_batch_size, shuffle=True, collate_fn= collate_fn)
-dev_loader = DataLoader(dev_dataset, num_workers=2, batch_size=config.eval_batch_size, shuffle=True, collate_fn= collate_fn)
+dev_loader = DataLoader(dev_dataset, num_workers=2, batch_size=config.eval_batch_size, shuffle=True, collate_fn= data_bert.collate_fn)
 
 ## Make model
-model = finalModel(vocab,config).to(config.device)
+model = bert_model.finalModel(vocab,config).to(config.device)
 # model = debugModel(embed_layer,node_in_dim,node_dim,node_out_dim,edge_in_dim,edge_dim,M,K,L).to(device)
 
 ## Make Optimizer and Criterion
@@ -55,11 +58,11 @@ total_steps = (config.epoch * len(train_loader) - 1) // config.num_acumulation +
 #                                   l2=0.01,
 #                                   vector_l2=True,
 #                                   max_grad_norm=config.clip)
-bert_param_ids = list(map(id, model.embed.parameters()))
+bert_param_ids = list(map(id, model.bert.parameters()))
 base_params = filter(lambda p: p.requires_grad and id(p) not in bert_param_ids, model.parameters())
 
 optimizer = torch.optim.AdamW([
-    {'params': model.embed.parameters(), 'lr': config.lr * 0.01},
+    {'params': model.bert.parameters(), 'lr': config.lr * 0.01},
     {'params': base_params, 'weight_decay': config.weight_decay}
 ], lr=config.lr)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=(config.epoch // 4) + 1)

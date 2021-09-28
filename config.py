@@ -13,7 +13,7 @@ def parse_config():
     parser.add_argument('--max_token_len',default=512,type=int)
     parser.add_argument('--naPairs_alpha',default=2.0,type=float)
 
-    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat'])
+    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat','rgcn2'])
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
     parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])

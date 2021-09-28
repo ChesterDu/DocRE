@@ -293,7 +293,7 @@ class Trainner(nn.Module):
             rs = total_tps / (total_tps + total_fns + epsilon)
             f1s = 2* (ps*rs) / (ps + rs + epsilon)
             f1 = f1s.max()
-            f1_pos = f1.argmax()
+            f1_pos = f1s.argmax()
             p = ps[f1_pos]
             r = rs[f1_pos]
             theta = candidate_thetas[f1_pos]

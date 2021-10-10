@@ -20,6 +20,7 @@ def parse_config():
     parser.add_argument('--fix_embed_weight',action='store_true')
 
     parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
+    parser.add_argument("--mention_pool_method",default='avg',type=str,choices=['avg','log_sum_exp'])
 
     parser.add_argument('--node_dim',default=300,type=int)
     parser.add_argument('--node_out_dim',default=768,type=int)
@@ -27,6 +28,7 @@ def parse_config():
     parser.add_argument('--edge_type_emb_dim',default=768,type=int)
     parser.add_argument('--node_ner_emb_dim',default=300,type=int)
     parser.add_argument('--node_attr_emb_dim',default=300,type=int)
+    parser.add_argument('--edge_emb_dim',default=768,type=int)
 
     parser.add_argument('--M',default=3,type=int)
     parser.add_argument('--K',default=3,type=int)
@@ -39,6 +41,7 @@ def parse_config():
     parser.add_argument('--use_loss_weight',action='store_true')
     parser.add_argument('--use_amr_graph',action='store_true')
     parser.add_argument('--bert_finetune_baseline',action='store_true')
+    parser.add_argument('--use_edge_path',action='store_true')
 
     parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
@@ -59,6 +62,70 @@ def parse_config():
 
     config = parser.parse_args()
     # config = parser.parse_args(args=[])
+
+
+    return config
+
+
+def parse_config_notebook():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--debug',action='store_true')
+    parser.add_argument('--seed',default=20,type=int)
+    parser.add_argument('--epoch',default=20,type=int)
+    parser.add_argument('--train_batch_size',default=4,type=int)
+    parser.add_argument('--eval_batch_size',default=8,type=int)
+    parser.add_argument('--max_token_len',default=512,type=int)
+    parser.add_argument('--naPairs_alpha',default=2.0,type=float)
+
+    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat','rgcn2'])
+    parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
+    parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
+    parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])
+    parser.add_argument('--fix_embed_weight',action='store_true')
+
+    parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
+    parser.add_argument("--mention_pool_method",default='avg',type=str,choices=['avg','log_sum_exp'])
+
+    parser.add_argument('--node_dim',default=300,type=int)
+    parser.add_argument('--node_out_dim',default=768,type=int)
+    parser.add_argument('--edge_dim',default=300,type=int)
+    parser.add_argument('--edge_type_emb_dim',default=768,type=int)
+    parser.add_argument('--node_ner_emb_dim',default=300,type=int)
+    parser.add_argument('--node_attr_emb_dim',default=300,type=int)
+    parser.add_argument('--edge_emb_dim',default=768,type=int)
+
+    parser.add_argument('--M',default=3,type=int)
+    parser.add_argument('--K',default=3,type=int)
+    parser.add_argument('--L',default=2,type=int)
+    parser.add_argument('--dropout',default=0.6,type=float)
+
+    parser.add_argument('--use_ner_feature',action='store_true')
+    parser.add_argument('--use_attr_feature',action='store_true')
+    parser.add_argument('--use_doc_feature',action='store_true')
+    parser.add_argument('--use_loss_weight',action='store_true')
+    parser.add_argument('--use_amr_graph',action='store_true')
+    parser.add_argument('--bert_finetune_baseline',action='store_true')
+    parser.add_argument('--use_edge_path',action='store_true')
+
+    parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
+    parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
+
+
+    parser.add_argument('--theta',default=0.8,type=float)
+    parser.add_argument('--lr',default=1e-3,type=float)
+    parser.add_argument('--clip',default=1.0,type=float)
+    parser.add_argument('--weight_decay',default=0.0001,type=float)
+    parser.add_argument('--num_acumulation',default=1,type=int)
+    parser.add_argument('--total_steps',default=10000,type=int)
+    parser.add_argument('--metric_check_freq',default=100,type=int)
+    parser.add_argument('--loss_print_freq',default=10,type=int)
+    parser.add_argument('--device',default=0,type=int)
+
+    parser.add_argument('--log_pth',default='../logs/',type=str)
+    parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
+
+    # config = parser.parse_args()
+    config = parser.parse_args(args=[])
 
 
     return config

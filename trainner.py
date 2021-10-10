@@ -157,7 +157,7 @@ class Trainner(nn.Module):
                         self.scheduler.step(self.epoch_count)
                     self.step_count += 1
                     # bar.update(1)
-                    fitlog.add_loss(loss.item(),name='Loss',step=self.step_count)
+                    fitlog.add_loss(epoch_loss/self.forward_count,name='Loss',step=self.step_count)
                     self.optimizer.zero_grad()
                     if self.step_count >= self.total_steps:
                         break
@@ -167,6 +167,8 @@ class Trainner(nn.Module):
                         print("Epoch:{}/{} || Step:{}/{} || Loss:{} || NA Acc: {} ||not NA Acc: {}".format( \
                             self.epoch_count,self.epoch,self.step_count,self.total_steps,epoch_loss/(cur_i + 1),\
                             correct_Na/total_Na,correct_not_Na/total_not_Na))
+                        fitlog.add_metric({"train":{"NA Acc":correct_Na/total_Na}},step=self.step_count,epoch=self.epoch_count)
+                        fitlog.add_metric({"train":{"not NA Acc":correct_not_Na/total_not_Na}},step=self.step_count,epoch=self.epoch_count)
                     
                     # if (self.step_count % self.metric_check_freq) == 0:
             print('Evaluation Start......')

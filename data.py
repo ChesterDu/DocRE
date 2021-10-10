@@ -53,7 +53,7 @@ def get_edge_idx(edge_type_str):
 
 
 def build_vocab(train_data_pth,test_data_pth,dev_data_pth):
-    vocab = Vocabulary()
+    vocab = Vocabulary(min_freq=50)
     def add_words_to_vocab(data_pth,vocab):
         with open(data_pth,'r') as fp:
             samples = json.load(fp)

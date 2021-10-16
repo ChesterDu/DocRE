@@ -86,7 +86,7 @@ def parse_config_notebook():
     parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
     parser.add_argument("--mention_pool_method",default='avg',type=str,choices=['avg','log_sum_exp'])
 
-    parser.add_argument('--node_dim',default=300,type=int)
+    parser.add_argument('--node_dim',default=768,type=int)
     parser.add_argument('--node_out_dim',default=768,type=int)
     parser.add_argument('--edge_dim',default=300,type=int)
     parser.add_argument('--edge_type_emb_dim',default=768,type=int)

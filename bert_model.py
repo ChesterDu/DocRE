@@ -51,29 +51,14 @@ class finalModel(nn.Module):
         if config.use_ner_feature:
             self.node_in_dim += config.node_ner_emb_dim
             self.nerEmb = nn.Embedding(NER_NUM + 1,config.node_ner_emb_dim,padding_idx=0)
-            for p in self.nerEmb.parameters():
-                if p.dim() >= 2:
-                    torch.nn.init.xavier_normal_(p)
-                else:
-                    torch.nn.init.normal_(p)
+            self.weight_init(self.nerEmb)
         if config.use_attr_feature:
             self.node_in_dim += config.node_attr_emb_dim
             self.attrEmb = nn.Embedding(NODE_ATTR_NUM,config.node_attr_emb_dim)
-            for p in self.attrEmb.parameters():
-                if p.dim() >= 2:
-                    torch.nn.init.xavier_normal_(p)
-                else:
-                    torch.nn.init.normal_(p)
+            self.weight_init(self.attrEmb)
         self.config = config
 
-        if config.use_edge_path:
-            self.edge_embedding = nn.Embedding(len(vocab),config.edge_emb_dim,padding_idx=0)
-            self.lstm = nn.LSTM(input_size=config.edge_emb_dim,hidden_size=config.node_dim,num_layers=config.L,batch_first=True,dropout=config.dropout)
-            # self.edge_path_fc = nn.Sequential(nn.Linear(4*config.node_dim,2*config.node_dim),
-            #                          self.pred_activation,
-            #                          nn.Dropout(config.dropout),
-            #                          nn.Linear(2*config.node_dim,OUTPUT_NUM)
-            #                         )
+       
         # GNNs
         # if config.gnn == 'rgat':
         #     self.gnn = multiLayerRGAT(self.node_in_dim,config.node_dim,config.node_out_dim,config.edge_type_emb_dim,config.edge_dim,config.M,config.K,config.L,activation=make_activation(config.gnn_activation),dropout=config.dropout)
@@ -103,24 +88,42 @@ class finalModel(nn.Module):
         #         torch.nn.init.normal_(p)
 
         # Prediction Layer
+        self.entity_embed_dim = self.node_in_dim * 2
+        if config.use_edge_path:
+            self.entity_embed_dim += config.node_dim
+            from data_bert import etype_descriptor
+            self.edge_embedding = nn.Embedding(len(etype_descriptor) + 1,config.edge_emb_dim,padding_idx=0)
+            self.lstm = nn.LSTM(input_size=config.edge_emb_dim,hidden_size=config.node_dim,num_layers=config.L,batch_first=True,dropout=config.dropout)
+            self.weight_init(self.edge_embedding)
+            self.weight_init(self.lstm)
+            # self.edge_path_fc = nn.Sequential(nn.Linear(4*config.node_dim,2*config.node_dim),
+            #                          self.pred_activation,
+            #                          nn.Dropout(config.dropout),
+            #                          nn.Linear(2*config.node_dim,OUTPUT_NUM)
+            #                         )
 
         if config.use_doc_feature:
             self.doc_feature_fc = nn.Sequential(nn.Linear(self.bert.config.hidden_size,self.node_in_dim),
                                                 self.pred_activation,
                                                 nn.Dropout(config.dropout)
                                                 )
+            self.weight_init(self.doc_feature_fc)
 
-        self.entity_embed_dim = self.node_in_dim * 2
+        
         self.pred_fc = nn.Sequential(nn.Linear(4*self.entity_embed_dim,2*self.entity_embed_dim),
                                      self.pred_activation,
                                      nn.Dropout(config.dropout),
                                      nn.Linear(2*self.entity_embed_dim,OUTPUT_NUM)
                                     )
-        for p in self.pred_fc.parameters():
+        self.weight_init(self.pred_fc)
+
+    def weight_init(self,module):
+        for p in module.parameters():
             if p.dim() >= 2:
                 torch.nn.init.xavier_normal_(p)
             else:
                 torch.nn.init.normal_(p)
+        
     
     def forward(self,batch_data):
         device = self.config.device
@@ -156,12 +159,14 @@ class finalModel(nn.Module):
         node_mask = batch_data['node_mask'].to(device)
         node_feature = node_feature * node_mask.unsqueeze(-1) #[bsz,max_node_num,feature_dim]
 
-        ent2MentionId = batch_data['ent2MentionId'].to(device) #[bsz,max_ent_num,max_mention_nums]
-        ent2MentionId_mask = batch_data['ent2MentionId_mask'].to(device) #[bsz,max_ent_num,max_mention_nums]
-
         batched_graph_lst = [item.to(torch.device(device)) for item in batch_data['graph']]
-        out_ent_features = torch.zeros(ent2MentionId.shape[0],ent2MentionId.shape[1],ent2MentionId.shape[2],self.entity_embed_dim,dtype=torch.float,device=device)
+        # out_ent_features = torch.zeros(ent2MentionId.shape[0],ent2MentionId.shape[1],ent2MentionId.shape[2],self.entity_embed_dim,dtype=torch.float,device=device)
+        batched_out = torch.zeros(batch_data['ent_pair'].shape[0],batch_data['ent_pair'].shape[1],OUTPUT_NUM,device=device)
         for i in range(bsz):
+            ent2MentionId = batch_data['ent2MentionId'][i].to(device) #[max_ent_num,max_mention_nums]
+            ent2MentionId_mask = batch_data['ent2MentionId_mask'][i].to(device) #[max_ent_num,max_mention_nums]
+            ent_pairs = batch_data['ent_pair'][i].to(device) #[max_pair_num,2]
+
             graph = batched_graph_lst[i]
             # print(graph.nodes)
             node_select_idx = (node_mask[i] != 0).nonzero().squeeze(-1)
@@ -174,61 +179,42 @@ class finalModel(nn.Module):
             node_in_feature[ment_num] = doc_cls_feature[i] # initialize the doc_feature
 
             out_node_feature_lst,_ = self.gnn(graph,node_in_feature)
-            out_node_feature = torch.cat([out_node_feature_lst[0],out_node_feature_lst[-1]],dim=-1)
+            out_node_feature = torch.cat([out_node_feature_lst[0],out_node_feature_lst[-1]],dim=-1) #[node_num, hid_dim]
+            out_node_feature = torch.cat([torch.zeros(1,out_node_feature.shape[-1],device=device),out_node_feature],dim=0) #[node_num+1,hid_dim] for PADDING
 
-            out_ent_features[i] = out_node_feature[ent2MentionId[i]]
+            out_ent_feature = out_node_feature[ent2MentionId] * ent2MentionId_mask.unsqueeze(-1) #[max_ent_num,max_mention_nums,hid_dim]
+            if self.config.mention_pool_method == "avg":
+                out_ent_feature = out_ent_feature.sum(1) / (ent2MentionId_mask.sum(1,keepdim=True) + 1e-7) # [max_ent_num, hid_dim]
 
+            h_feature = out_ent_feature[ent_pairs[:,0]] #[max_pair_num,dim]
+            t_feature = out_ent_feature[ent_pairs[:,1]] #[max_pair_num,dim]
 
-            # out_ent_features[i] = node_in_feature[ent2MentionId[i]]
+            if self.config.use_edge_path:
+                edge_path = batch_data['edge_path'][i].to(device) # [max_pair_num, max_edge_path_num,2,max_edge_path_len,3]
+                pair_num, max_edge_path_num, _, max_edge_path_len,_ = edge_path.shape
+                edge_path = edge_path.reshape(-1,edge_path.shape[-2],3) # [max_pair_num * max_edge_path_num * 2,max_edge_path_len,3]
+                edge_path_type_embed = self.edge_embedding(edge_path[:,:,1]) # [max_pair_num * max_edge_path_num * 2,max_edge_path_len,embed_dim]
+                # edge_path_h_embed = out_node_feature[edge_path[:,:,0]]
+                # edge_path_t_embed = out_node_feature[edge_path[:,:,2]]
+                # edge_path_embed = torch.cat([edge_path_h_embed-edge_path_t_embed,edge_path_type_embed],dim=-1) # [max_pair_num * max_edge_path_num * 2,max_edge_path_len,embed_dim]
+                edge_path_embed = edge_path_type_embed
 
+                _,(h_n,_) = self.lstm(edge_path_embed)
+                edge_path_info = h_n[-1] # only use last hidden states [max_pair_num * max_edge_path_num * 2,hidden_dim]
+                edge_path_info = edge_path_info.reshape(pair_num, max_edge_path_num, 2, edge_path_info.shape[-1])
+                edge_path_info = edge_path_info.sum(1) #[max_pair_num,2,hidden_dim]
 
-            # out_ent_features[i] = select_mention_feature[ent2MentionId[i]]
+                edge_path_info_h = torch.cat([edge_path_info[:,0,:],torch.zeros(h_feature.shape[0]-pair_num,edge_path_info.shape[-1],device=device)],dim=0) #[max_pair_num,hid_dim]
+                edge_path_info_t = torch.cat([edge_path_info[:,1,:],torch.zeros(t_feature.shape[0]-pair_num,edge_path_info.shape[-1],device=device)],dim=0)#[max_pair_num,hid_dim]
 
-        out_ent_features = out_ent_features * ent2MentionId_mask.unsqueeze(-1)  # [bsz, max_ent_num, max_mention_num, feature_dim]
-        if self.config.mention_pool_method == "avg":
-            out_ent_features = out_ent_features.sum(2) / (ent2MentionId_mask.sum(2,keepdim=True) + 1e-7) # [bsz, max_ent_num, feature_dim]
+                h_feature = torch.cat([h_feature,edge_path_info_h],dim=-1)
+                t_feature = torch.cat([t_feature,edge_path_info_t],dim=-1)
 
-        if self.config.mention_pool_method == "log_sum_exp":
-            out_ent_features = torch.exp(out_ent_features) * ent2MentionId_mask.unsqueeze(-1)
-            out_ent_features = out_ent_features.sum(dim=2)
-            out_ent_features = torch.log(out_ent_features) * ent2MentionId_mask.sum(-1,keepdim=True)
-        
-        ent_pairs = batch_data['ent_pair'].to(device) #[bsz,max_pair_num,2]
-        for i in range(bsz):
-            ent_pairs[i] += out_ent_features.shape[1] * i
+            out = self.pred_fc(torch.cat([h_feature,t_feature,torch.abs(h_feature-t_feature), h_feature * t_feature],dim=-1))
 
-        out_ent_features = out_ent_features.reshape(-1,out_ent_features.shape[-1])
-        h_feature = out_ent_features[ent_pairs[:,:,0]] #[bsz,max_pair_num,dim]
-        t_feature = out_ent_features[ent_pairs[:,:,1]] #[bsz,max_pair_num,dim]
+            batched_out[i] = out
 
-        # batch_edge_path_info = None
-        # for i in range(bsz):
-        #     edge_path = batch_data['edge_path'][i].to(device) # [pair_num, max_edge_path_num,2,max_edge_path_len]
-        #     pair_num, max_edge_path_num, _, max_edge_path_len = edge_path.shape
-        #     edge_path = edge_path.reshape(-1,edge_path.shape[-1]) # [pair_num * max_edge_path_num * 2,max_edge_path_len]
-        #     edge_path_embed = self.edge_embedding(edge_path) # [pair_num * max_edge_path_num * 2,max_edge_path_len,embed_dim]
-        #     _,(h_n,_) = self.lstm(edge_path_embed)
-        #     edge_path_info = h_n[-1] # only use last hidden states [pair_num * max_edge_path_num * 2,hidden_dim]
-        #     edge_path_info = edge_path_info.reshape(pair_num, max_edge_path_num, 2, edge_path_info.shape[-1])
-
-        #     edge_path_info = edge_path_info.sum(1) #[pair_num,2,hidden_dim]
-        #     edge_path_info = torch.cat([edge_path_info,torch.zeros(h_feature.shape[1]-pair_num,2,edge_path_info.shape[-1],device=device)],dim=0) #[max_pair_num,2,hidden_dim]
-
-        #     batch_edge_path_info = edge_path_info.unsqueeze(0) if batch_edge_path_info == None else torch.cat([batch_edge_path_info,edge_path_info.unsqueeze(0)],dim=0)
-
-        # out = self.pred_fc(torch.cat([h_feature,t_feature,torch.abs(h_feature-t_feature), h_feature * t_feature],dim=-1))
-        # edge_path_h_info = batch_edge_path_info[:,:,0,:]
-        # edge_path_t_info = batch_edge_path_info[:,:,1,:]
-
-        # h_feature = torch.cat([h_feature,edge_path_h_info],dim=-1)
-        # t_feature = torch.cat([t_feature,edge_path_t_info],dim=-1)
-
-        out = self.pred_fc(torch.cat([h_feature,t_feature,torch.abs(h_feature-t_feature), h_feature * t_feature],dim=-1))
-
-        # edge_path_out = self.edge_path_fc(torch.cat([edge_path_h_info,edge_path_t_info,torch.abs(edge_path_h_info-edge_path_t_info),edge_path_h_info*edge_path_t_info],dim=-1))
-
-
-        return out
+        return batched_out
         
         
 

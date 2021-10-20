@@ -148,10 +148,10 @@ class multiLayerRelGraphConv(nn.Module):
         #     node_features = self.dropout(node_features)
 
 
-        out_feature_list = [node_in_features]
+        out_feature_list = [node_in_features.unsqueeze(0)]
         for gnn in self.gnns:
             node_features = gnn(g,{'nodes':node_features})['nodes']
-            out_feature_list.append(node_features)
+            out_feature_list.append(node_features.unsqueeze(0))
 
         node_out_features = node_features
 

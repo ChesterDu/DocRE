@@ -1,5 +1,6 @@
 
 import argparse
+from random import choices
 
 from torch.backends.cudnn import flags
 
@@ -13,7 +14,7 @@ def parse_config():
     parser.add_argument('--max_token_len',default=512,type=int)
     parser.add_argument('--naPairs_alpha',default=2.0,type=float)
 
-    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat','rgcn2'])
+    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat','rgcn2','none'])
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
     parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])
@@ -22,17 +23,25 @@ def parse_config():
     parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
     parser.add_argument("--mention_pool_method",default='avg',type=str,choices=['avg','log_sum_exp'])
 
-    parser.add_argument('--node_dim',default=300,type=int)
+    parser.add_argument('--node_dim',default=128,type=int)
     parser.add_argument('--node_out_dim',default=768,type=int)
-    parser.add_argument('--edge_dim',default=300,type=int)
-    parser.add_argument('--edge_type_emb_dim',default=768,type=int)
-    parser.add_argument('--node_ner_emb_dim',default=300,type=int)
-    parser.add_argument('--node_attr_emb_dim',default=300,type=int)
-    parser.add_argument('--edge_emb_dim',default=768,type=int)
+    parser.add_argument('--node_ner_emb_dim',default=128,type=int)
+    parser.add_argument('--node_attr_emb_dim',default=128,type=int)
+    parser.add_argument('--edge_emb_dim',default=128,type=int)
 
-    parser.add_argument('--M',default=3,type=int)
+    parser.add_argument('--M',default=16,type=int)
     parser.add_argument('--K',default=3,type=int)
     parser.add_argument('--L',default=2,type=int)
+
+    # Arguments for IDGL
+    parser.add_argument('--T',default=5,type=int)
+    parser.add_argument('--eplison',default=0.1,type=float)
+    parser.add_argument('--topk',default=5,type=int)
+    parser.add_argument('--lambd',default=0.1,type=float)
+    parser.add_argument('--yita',default=0.9,type=float)
+    parser.add_argument('--graph_constructor',default='attn',type=str,choices=['attn','cos'])
+    parser.add_argument('--graph_sparser',default='knn',type=str,choices=['knn','eplison'])
+
     parser.add_argument('--dropout',default=0.6,type=float)
 
     parser.add_argument('--use_ner_feature',action='store_true')
@@ -42,6 +51,8 @@ def parse_config():
     parser.add_argument('--use_amr_graph',action='store_true')
     parser.add_argument('--bert_finetune_baseline',action='store_true')
     parser.add_argument('--use_edge_path',action='store_true')
+    parser.add_argument('--use_dynamic_graph',action='store_true')
+    parser.add_argument('--dynamic_graph_type',default='IDGL',type=str,choices=['IDGL','StructureAware'])
 
     parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
@@ -56,6 +67,8 @@ def parse_config():
     parser.add_argument('--metric_check_freq',default=100,type=int)
     parser.add_argument('--loss_print_freq',default=10,type=int)
     parser.add_argument('--device',default=0,type=int)
+    parser.add_argument('--scheduler',default='cos',type=str,choices=['cos','linear','constant'])
+    parser.add_argument('--warmup',default=0.0,type=float)
 
     parser.add_argument('--log_pth',default='../logs/',type=str)
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
@@ -77,7 +90,7 @@ def parse_config_notebook():
     parser.add_argument('--max_token_len',default=512,type=int)
     parser.add_argument('--naPairs_alpha',default=2.0,type=float)
 
-    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat','rgcn2'])
+    parser.add_argument('--gnn',default='rgat',type=str,choices=['rgcn','rgat','rgcn2','none'])
     parser.add_argument('--embed_type',default='bert-base',type=str,choices=['bert-base','Elmo'])
     parser.add_argument('--embed_pth',default='../pretrained_embed/bert-base-uncased',type=str)
     parser.add_argument('--embed_pool_method',default='avg',type=str,choices=['avg','first','last'])
@@ -86,17 +99,23 @@ def parse_config_notebook():
     parser.add_argument("--node_span_pool_method",default='avg',type=str,choices=['avg','first','last'])
     parser.add_argument("--mention_pool_method",default='avg',type=str,choices=['avg','log_sum_exp'])
 
-    parser.add_argument('--node_dim',default=768,type=int)
+    parser.add_argument('--node_dim',default=300,type=int)
     parser.add_argument('--node_out_dim',default=768,type=int)
     parser.add_argument('--edge_dim',default=300,type=int)
     parser.add_argument('--edge_type_emb_dim',default=768,type=int)
-    parser.add_argument('--node_ner_emb_dim',default=300,type=int)
-    parser.add_argument('--node_attr_emb_dim',default=300,type=int)
+    parser.add_argument('--node_ner_emb_dim',default=128,type=int)
+    parser.add_argument('--node_attr_emb_dim',default=128,type=int)
     parser.add_argument('--edge_emb_dim',default=768,type=int)
 
     parser.add_argument('--M',default=3,type=int)
     parser.add_argument('--K',default=3,type=int)
     parser.add_argument('--L',default=2,type=int)
+
+    parser.add_argument('--T',default=5,type=int)
+    parser.add_argument('--eplison',default=0.1,type=float)
+    parser.add_argument('--lambd',default=0.5,type=float)
+    parser.add_argument('--yita',default=0.3,type=float)
+
     parser.add_argument('--dropout',default=0.6,type=float)
 
     parser.add_argument('--use_ner_feature',action='store_true')
@@ -106,6 +125,7 @@ def parse_config_notebook():
     parser.add_argument('--use_amr_graph',action='store_true')
     parser.add_argument('--bert_finetune_baseline',action='store_true')
     parser.add_argument('--use_edge_path',action='store_true')
+    parser.add_argument('--use_dynamic_graph',action='store_true')
 
     parser.add_argument('--pred_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
     parser.add_argument('--gnn_activation',default='relu',type=str,choices=['relu','leaky relu','tanh','sigmoid','gelu'])
@@ -124,6 +144,7 @@ def parse_config_notebook():
     parser.add_argument('--log_pth',default='../logs/',type=str)
     parser.add_argument('--checkpoint_pth',default='../checkpoints/',type=str)
 
+    
     # config = parser.parse_args()
     config = parser.parse_args(args=[])
 

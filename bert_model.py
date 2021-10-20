@@ -3,9 +3,11 @@ import dgl
 import torch.nn.functional as F
 import torch
 import torch.nn as nn
-from torch.nn.modules import dropout
+from torch.nn.modules import activation, dropout
 from transformers import BertModel
 from gnn.rgcn2 import multiLayerRelGraphConv
+from gnn.dgnn import IDGL, StructureAwareGraphEncoder
+from data_bert import etype_descriptor
 
 
 NER_NUM = 7
@@ -70,8 +72,9 @@ class finalModel(nn.Module):
         #             torch.nn.init.normal_(p)
         # if config.gnn == 'rgcn':
         #     self.gnn = multiLayerRGCN(self.node_in_dim,config.node_dim,config.node_out_dim,REL_TYPE_NUM,config.L,activation=make_activation(config.gnn_activation),dropout=config.dropout)
-        
+        self.entity_embed_dim = self.node_in_dim
         if config.gnn == 'rgcn2':
+            self.entity_embed_dim += self.node_in_dim
             rel_names = ['loc','time','ins','mod','prep','op','ARG0','ARG1','ARG2','ARG3','ARG4','MENTION-MENTION',"DOC-MENTION","MENTION-INTER-MENTION",'others']
             # rel_names = ['MENTION-MENTION',"DOC-MENTION","MENTION-INTER-MENTION"]
             # rel_names = ['MENTION-MENTION']
@@ -88,10 +91,8 @@ class finalModel(nn.Module):
         #         torch.nn.init.normal_(p)
 
         # Prediction Layer
-        self.entity_embed_dim = self.node_in_dim * 2
         if config.use_edge_path:
-            self.entity_embed_dim += config.node_dim
-            from data_bert import etype_descriptor
+            self.entity_embed_dim += self.node_in_dim
             self.edge_embedding = nn.Embedding(len(etype_descriptor) + 1,config.edge_emb_dim,padding_idx=0)
             self.lstm = nn.LSTM(input_size=config.edge_emb_dim,hidden_size=config.node_dim,num_layers=config.L,batch_first=True,dropout=config.dropout)
             self.weight_init(self.edge_embedding)
@@ -101,6 +102,14 @@ class finalModel(nn.Module):
             #                          nn.Dropout(config.dropout),
             #                          nn.Linear(2*config.node_dim,OUTPUT_NUM)
             #                         )
+        
+        if config.use_dynamic_graph:
+            self.entity_embed_dim += self.node_in_dim
+            if config.dynamic_graph_type == 'IDGL':
+                self.dynamic_gnn = IDGL(config,self.node_in_dim,config.edge_emb_dim,len(etype_descriptor)+1,activation=make_activation(config.gnn_activation),dropout=config.dropout)
+            if config.dynamic_graph_type == 'StructureAware':
+                self.dynamic_gnn = StructureAwareGraphEncoder(self.node_in_dim,config.edge_emb_dim,config.M,config.dropout,512,config.L,len(etype_descriptor)+1)
+            self.weight_init(self.dynamic_gnn)
 
         if config.use_doc_feature:
             self.doc_feature_fc = nn.Sequential(nn.Linear(self.bert.config.hidden_size,self.node_in_dim),
@@ -178,9 +187,15 @@ class finalModel(nn.Module):
             node_in_feature = select_node_feature
             node_in_feature[ment_num] = doc_cls_feature[i] # initialize the doc_feature
 
-            out_node_feature_lst,_ = self.gnn(graph,node_in_feature)
-            out_node_feature = torch.cat([out_node_feature_lst[0],out_node_feature_lst[-1]],dim=-1) #[node_num, hid_dim]
-            out_node_feature = torch.cat([torch.zeros(1,out_node_feature.shape[-1],device=device),out_node_feature],dim=0) #[node_num+1,hid_dim] for PADDING
+            out_node_feature = node_in_feature
+            if self.config.gnn != 'none':
+                out_node_feature_lst,_ = self.gnn(graph,node_in_feature)
+                out_node_feature = torch.cat([out_node_feature,out_node_feature_lst[-1]],dim=-1) #[node_num, hid_dim]
+            if self.config.use_dynamic_graph:
+                A = batch_data['adjMatrix'][i].to(device)
+                dynamic_out = self.dynamic_gnn(node_in_feature,A)
+                out_node_feature = torch.cat([out_node_feature,dynamic_out],dim=-1)
+            # out_node_feature = torch.cat([torch.zeros(1,out_node_feature.shape[-1],device=device),out_node_feature],dim=0) #[node_num+1,hid_dim] for PADDING
 
             out_ent_feature = out_node_feature[ent2MentionId] * ent2MentionId_mask.unsqueeze(-1) #[max_ent_num,max_mention_nums,hid_dim]
             if self.config.mention_pool_method == "avg":

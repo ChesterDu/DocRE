@@ -11,6 +11,7 @@ from opt import OpenAIAdam
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
 import torch
+import transformers
 
 
 
@@ -47,6 +48,8 @@ model = bert_model.finalModel(vocab,config).to(config.device)
 ## Make Optimizer and Criterion
 # optimizer = torch.optim.Adam(model.parameters(),lr=config.lr)
 total_steps = (config.epoch * len(train_loader) - 1) // config.num_acumulation + 1
+
+
 # optimizer = OpenAIAdam(filter(lambda p: p.requires_grad, model.parameters()),
 #                                   lr=config.lr,
 #                                   schedule='warmup_linear',
@@ -62,10 +65,17 @@ bert_param_ids = list(map(id, model.bert.parameters()))
 base_params = filter(lambda p: p.requires_grad and id(p) not in bert_param_ids, model.parameters())
 
 optimizer = torch.optim.AdamW([
-    {'params': model.bert.parameters(), 'lr': config.lr * 0.01},
-    {'params': base_params, 'weight_decay': config.weight_decay}
+    {'params': model.bert.parameters(), 'initial_lr': config.lr * 0.01},
+    {'params': base_params, 'weight_decay': config.weight_decay, 'initial_lr':config.lr}
 ], lr=config.lr)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=(config.epoch // 4) + 1)
+# scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=total_steps)
+num_warmup_steps = int(total_steps * config.warmup)
+if config.scheduler == 'cos':
+    scheduler = transformers.get_cosine_schedule_with_warmup(optimizer,num_warmup_steps,total_steps)
+if config.scheduler == 'linear':
+    scheduler = transformers.get_linear_schedule_with_warmup(optimizer,num_warmup_steps,total_steps)
+if config.scheduler == 'constant':
+    scheduler = transformers.get_constant_schedule_with_warmup(optimizer,num_warmup_steps,total_steps)
 # optimizer = torch.optim.SGD(model.parameters(),lr=config.lr)
 
 if config.use_loss_weight:

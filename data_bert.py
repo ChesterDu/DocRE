@@ -1,5 +1,3 @@
-from os import initgroups, path
-import types
 from dgl import batch
 from fastNLP.core.vocabulary import Vocabulary
 import networkx as nx
@@ -23,7 +21,7 @@ with open("../DocRED/ner2id.json","r") as fp:
 attr2id = {'entity':0,"mention":1,"amr":2}
 
 ntype_descriptor = ['nodes']
-etype_descriptor = ['loc','time','ins','mod','prep','op','ARG0','ARG1','ARG2','ARG3','ARG4','ENT-MENTION','MENTION-AMR','MENTION-NEAREST','others']
+etype_descriptor = ['loc','time','ins','mod','prep','op','ARG0','ARG1','ARG2','ARG3','ARG4','MENTION-MENTION',"DOC-MENTION","MENTION-INTER-MENTION",'others']
 ## Function that convert edge type string to Id
 def get_edge_idx(edge_type_str):    
         if edge_type_str in ['location', 'destination', 'path']:
@@ -48,11 +46,11 @@ def get_edge_idx(edge_type_str):
             return 9
         elif edge_type_str == 'ARG4':
             return 10
-        elif edge_type_str == "ENT-MENTION":
+        elif edge_type_str == "MENTION-MENTION":
             return 11
-        elif edge_type_str == "MENTION-AMR":
+        elif edge_type_str == "DOC-MENTION":
             return 12
-        elif edge_type_str == "MENTION-NEAREST":
+        elif edge_type_str == "MENTION-INTER-MENTION":
             return 13
         else:
             return 14
@@ -277,6 +275,7 @@ class BertGraphDataset(torch.utils.data.Dataset):
                             continue
                         d[('nodes',"MENTION-INTER-MENTION","nodes")].append((ment_id,ment_id_j))
 
+            doc['nodeSpanPos'] = mention_pos_lst + [[]]
             if self.config.use_amr_graph:
                 amrNode2nodeId = {}
                 amr_node_id = doc_node_id + 1
@@ -376,12 +375,19 @@ class BertGraphDataset(torch.utils.data.Dataset):
                         node_id_v = get_amr_node_id(sent_id,v)
                         etype_str = etype_descriptor[get_edge_idx(amr_rel[1:])]
                         d[('nodes',etype_str,'nodes')].append((node_id_u,node_id_v))
+                doc['amrNodePos'] = amr_node_span_pos_lst
+                doc['nodeSpanPos'] += doc['amrNodePos']
 
-
-            doc['amrNodePos'] = amr_node_span_pos_lst
-            doc['nodeSpanPos'] = mention_pos_lst + [[]] + amr_node_span_pos_lst
+            num_nodes = len(doc['nodeSpanPos'])
+            A = np.zeros([num_nodes,num_nodes])
+            for (_,etype_str,_),edges in d.items():
+                etype_id = etype_descriptor.index(etype_str)
+                for u,v in edges:
+                    A[u][v] = etype_id + 1
+                    # A[v][u] = 1
             # doc['nodeSpanPos'] = mention_pos_lst + [[]]
             doc['graph'] = d
+            doc['adjMatrix'] = A.tolist()
                     
             if self.config.use_edge_path:
                 mentIdPair2amrPath = {}
@@ -448,8 +454,8 @@ class BertGraphDataset(torch.utils.data.Dataset):
                     amrEdgePath = []
                     for mention_pair in relate_mention_pairs:
                         tuple_path_i,tuple_path_j,sen_id = mentIdPair2amrPath[mention_pair]
-                        edge_path_i = [[get_amr_node_id(sen_id,item[0])+1,get_edge_idx(item[1][1:])+1,get_amr_node_id(sen_id,item[2])+1] for item in tuple_path_i]
-                        edge_path_j = [[get_amr_node_id(sen_id,item[0])+1,get_edge_idx(item[1][1:])+1,get_amr_node_id(sen_id,item[2])+1] for item in tuple_path_j]
+                        edge_path_i = [[get_amr_node_id(sen_id,item[0]),get_edge_idx(item[1][1:]),get_amr_node_id(sen_id,item[2])] for item in tuple_path_i]
+                        edge_path_j = [[get_amr_node_id(sen_id,item[0]),get_edge_idx(item[1][1:]),get_amr_node_id(sen_id,item[2])] for item in tuple_path_j]
                         amrEdgePath.append([edge_path_i,edge_path_j])
                     entPair2amrEdgePath[ent_pair] = amrEdgePath
                 
@@ -496,8 +502,9 @@ def collate_fn(batch_samples):
     batched_node_ner = []
     batched_node_span_mask = []
     batched_node_mask = []
-    batched_edge_path = []
-    batched_edge_path_length = []
+    batched_adj_matrix = []
+    # batched_edge_path = []
+    # batched_edge_path_length = []
 
     batched_label = []
     batched_multi_label = []
@@ -542,8 +549,8 @@ def collate_fn(batch_samples):
         ent2MentionId_mask = []
         for mentions_id in sample['ent2MentionId']:
             mentions_id_mask = [1] * len(mentions_id) + [0] * (max_ent2mention_num - len(mentions_id))
-            mentions_id += [-1] * (max_ent2mention_num - len(mentions_id))
-            mentions_id = [item + 1 for item in mentions_id]
+            mentions_id += [0] * (max_ent2mention_num - len(mentions_id))
+            # mentions_id = [item + 1 for item in mentions_id]
             ent2MentionId_mask.append(mentions_id_mask)
             ent2MentionId.append(mentions_id)
         
@@ -561,17 +568,17 @@ def collate_fn(batch_samples):
         posPairs2label = sample['posPairs2label']
         pairs = []
 
-        edge_paths = [] # [pair_num, max_edge_path_num, 2, max_edge_path_len]
-        edge_path_lengths = [] # [pair_num, max_edge_path_num, 2]
-        entPair2amrEdgePath = sample['entPair2amrEdgePath']
-        max_edge_path_num = max([len(item) for k,item in entPair2amrEdgePath.items()])
+        # edge_paths = [] # [pair_num, max_edge_path_num, 2, max_edge_path_len]
+        # edge_path_lengths = [] # [pair_num, max_edge_path_num, 2]
+        # entPair2amrEdgePath = sample['entPair2amrEdgePath']
+        # max_edge_path_num = max([len(item) for k,item in entPair2amrEdgePath.items()])
         
-        max_edge_path_len = 0
-        for k,item in entPair2amrEdgePath.items():
-            for path_pair in item:
-                for path in path_pair:
-                    if len(path) > max_edge_path_len:
-                        max_edge_path_len = len(path)
+        # max_edge_path_len = 0
+        # for k,item in entPair2amrEdgePath.items():
+        #     for path_pair in item:
+        #         for path in path_pair:
+        #             if len(path) > max_edge_path_len:
+        #                 max_edge_path_len = len(path)
 
         relNum = len(rel2id)
         multi_labels = []
@@ -586,17 +593,17 @@ def collate_fn(batch_samples):
             multi_labels.append(multi_label)
             single_labels.append(random.choice(labels))
 
-            edge_path = entPair2amrEdgePath[(pair[0],pair[1])]
-            edge_path_padded = []
-            edge_path_length = []
-            for edge_path1,edge_path2 in edge_path:
-                edge_path_length.append([len(edge_path1),len(edge_path2)])
-                edge_path_padded.append([edge_path1 + [(0,0,0)] * (max_edge_path_len - len(edge_path1)), \
-                                            edge_path2 + [(0,0,0)] * (max_edge_path_len - len(edge_path2))])
-            edge_path_padded += [[[[0,0,0]] * max_edge_path_len,[[0,0,0]] * max_edge_path_len] for i in range(max_edge_path_num - len(edge_path_padded))]
-            edge_path_length += [[0,0] for i in range(max_edge_path_num - len(edge_path_length))]
-            edge_paths.append(edge_path_padded)
-            edge_path_lengths.append(edge_path_length)
+            # edge_path = entPair2amrEdgePath[(pair[0],pair[1])]
+            # edge_path_padded = []
+            # edge_path_length = []
+            # for edge_path1,edge_path2 in edge_path:
+            #     edge_path_length.append([len(edge_path1),len(edge_path2)])
+            #     edge_path_padded.append([edge_path1 + [(0,0,0)] * (max_edge_path_len - len(edge_path1)), \
+            #                                 edge_path2 + [(0,0,0)] * (max_edge_path_len - len(edge_path2))])
+            # edge_path_padded += [[[[0,0,0]] * max_edge_path_len,[[0,0,0]] * max_edge_path_len] for i in range(max_edge_path_num - len(edge_path_padded))]
+            # edge_path_length += [[0,0] for i in range(max_edge_path_num - len(edge_path_length))]
+            # edge_paths.append(edge_path_padded)
+            # edge_path_lengths.append(edge_path_length)
         
         for j,pair in enumerate(naPairs):
             multi_label = [0] * relNum
@@ -605,24 +612,25 @@ def collate_fn(batch_samples):
             single_labels.append(0)
             pairs.append(pair)
 
-            edge_path = entPair2amrEdgePath[(pair[0],pair[1])]
-            edge_path_padded = []
-            edge_path_length = []
-            for edge_path1,edge_path2 in edge_path:
-                edge_path_length.append([len(edge_path1),len(edge_path2)])
-                edge_path_padded.append([edge_path1 + [[0,0,0]] * (max_edge_path_len - len(edge_path1)), \
-                                            edge_path2 + [[0,0,0]] * (max_edge_path_len - len(edge_path2))])
-            edge_path_padded += [[[[0,0,0]] * max_edge_path_len,[[0,0,0]] * max_edge_path_len] for i in range(max_edge_path_num - len(edge_path_padded))]
-            edge_path_length += [[0,0] for i in range(max_edge_path_num - len(edge_path_length))]
-            edge_paths.append(edge_path_padded)
-            edge_path_lengths.append(edge_path_length)
+            # edge_path = entPair2amrEdgePath[(pair[0],pair[1])]
+            # edge_path_padded = []
+            # edge_path_length = []
+            # for edge_path1,edge_path2 in edge_path:
+            #     edge_path_length.append([len(edge_path1),len(edge_path2)])
+            #     edge_path_padded.append([edge_path1 + [[0,0,0]] * (max_edge_path_len - len(edge_path1)), \
+            #                                 edge_path2 + [[0,0,0]] * (max_edge_path_len - len(edge_path2))])
+            # edge_path_padded += [[[[0,0,0]] * max_edge_path_len,[[0,0,0]] * max_edge_path_len] for i in range(max_edge_path_num - len(edge_path_padded))]
+            # edge_path_length += [[0,0] for i in range(max_edge_path_num - len(edge_path_length))]
+            # edge_paths.append(edge_path_padded)
+            # edge_path_lengths.append(edge_path_length)
         
 
         batched_label.append(single_labels)
         batched_multi_label.append(multi_labels)
         batched_entPair.append(pairs)
-        batched_edge_path.append(edge_paths)
-        batched_edge_path_length.append(edge_path_lengths)
+        batched_adj_matrix.append(sample['adjMatrix'])
+        # batched_edge_path.append(edge_paths)
+        # batched_edge_path_length.append(edge_path_lengths)
     
     max_pair_num = max([len(labels) for labels in batched_label])
     batched_label = [item + [-1] * (max_pair_num - len(item)) for item in batched_label]
@@ -641,8 +649,9 @@ def collate_fn(batch_samples):
     batched_label_mask = batched_label != -1
     batched_ent2MentionId = torch.LongTensor(batched_ent2MentionId)
     batched_ent2MentionId_mask = torch.BoolTensor(batched_ent2MentionId_mask)
-    batched_edge_path = [torch.LongTensor(item) for item in batched_edge_path]
-    batched_edge_path_length = [torch.LongTensor(item) for item in batched_edge_path_length]
+    batched_adj_matrix = [torch.LongTensor(item) for item in batched_adj_matrix]
+    # batched_edge_path = [torch.LongTensor(item) for item in batched_edge_path]
+    # batched_edge_path_length = [torch.LongTensor(item) for item in batched_edge_path_length]
 
     return dict(title=batched_titles,       # list: [bsz]
                 token_id=batched_token_id,  # Tensor: [bsz, max_token_len]
@@ -655,10 +664,11 @@ def collate_fn(batch_samples):
                 multi_label=batched_multi_label, # Tensor: [bsz, max_entPair, rel_num]
                 label_mask=batched_label_mask, # Tensor: [bsz, max_entPair]
                 ent_pair=batched_entPair, # Tensor: [bsz, max_entPair,2]
-                edge_path=batched_edge_path, # list(Tensor): [bsz] [pair_num, max_edge_path_num, 2, max_edge_path_len]
-                edge_path_length=batched_edge_path_length,  # list(Tensor): [bsz] [pair_num, max_edge_path_num, 2]
+                # edge_path=batched_edge_path, # list(Tensor): [bsz] [pair_num, max_edge_path_num, 2, max_edge_path_len]
+                # edge_path_length=batched_edge_path_length,  # list(Tensor): [bsz] [pair_num, max_edge_path_num, 2]
                 ent2MentionId=batched_ent2MentionId, # Tensor: [bsz, max_ent_num, max_ent2mention_num]
-                ent2MentionId_mask=batched_ent2MentionId_mask # Tensor: [bsz, max_ent_num, max_ent2mention_num]
+                ent2MentionId_mask=batched_ent2MentionId_mask, # Tensor: [bsz, max_ent_num, max_ent2mention_num]
+                adjMatrix=batched_adj_matrix
                 )
 
 
